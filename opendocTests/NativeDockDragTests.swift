@@ -6,6 +6,32 @@ import XCTest
 
 @MainActor
 final class NativeDockDragTests: XCTestCase {
+    func testFinderHasNewWindowInDockAndInsideFolder() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".json")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let store = DockStore(fileURL: url)
+        let finder = NativeApplications.item(for: URL(fileURLWithPath: "/System/Library/CoreServices/Finder.app"))
+        var folder = DockItem(kind: .folder, title: "Files", symbol: "folder")
+        folder.children = [finder]
+        let profile = DockProfile(name: "Window commands", symbol: "folder", color: "green", items: [folder])
+        try store.create(profile)
+        let application = MacApplication()
+        let dock = NativeDockController(profileID: profile.id, store: store, application: application)
+        defer { dock.close() }
+        XCTAssertNotNil(dock.menu(for: finder).item(withTitle: "New Window"))
+        XCTAssertNotNil(dock.menu(for: finder).item(withTitle: "Open"))
+        XCTAssertNil(dock.menu(for: .widget(.clock)).item(withTitle: "New Window"))
+        XCTAssertFalse(NativeApplicationWindows.supportsNewWindow(NativeApplications.item(for: Bundle.main.bundleURL)))
+        let controller = NativeFolderController(folderID: folder.id, dock: dock)
+        func buttons(in view: NSView) -> [NSButton] {
+            if let button = view as? NSButton { return [button] }
+            return view.subviews.flatMap { buttons(in: $0) }
+        }
+        let button = try XCTUnwrap(buttons(in: controller.view).first { $0.title == finder.title })
+        XCTAssertNotNil(button.menu?.item(withTitle: "New Window"))
+        XCTAssertNotNil(button.menu?.item(withTitle: "Move to Dock"))
+    }
+
     func testFolderPagesKeepSizeAndClampAfterRemovingLastPage() throws {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".json")
         defer { try? FileManager.default.removeItem(at: url) }

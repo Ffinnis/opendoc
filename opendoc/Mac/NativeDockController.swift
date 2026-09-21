@@ -398,6 +398,13 @@ final class NativeDockController: NSWindowController, NSMenuDelegate {
         let menu = NSMenu()
         menu.delegate = self
         if let item {
+            if item.kind == .application {
+                menu.addItem(NativeMenuAction.item("Open") { [weak self] in self?.open(item) })
+                if NativeApplicationWindows.supportsNewWindow(item) {
+                    menu.addItem(NativeMenuAction.item("New Window") { [weak self] in self?.openNewWindow(item) })
+                }
+                menu.addItem(.separator())
+            }
             if item.kind == .folder {
                 menu.addItem(NativeMenuAction.item("Open Folder") { [weak self] in self?.open(item) })
                 menu.addItem(NativeMenuAction.item("Ungroup Applications") { [weak self] in
@@ -473,14 +480,12 @@ final class NativeDockController: NSWindowController, NSMenuDelegate {
             folderController?.show(relativeTo: target?.view ?? anchor, rect: target?.rect)
         case .application:
             guard let address = item.url, let url = URL(string: address) else { return }
-            if let running = NSWorkspace.shared.runningApplications.first(where: { $0.bundleURL?.standardizedFileURL.path == url.standardizedFileURL.path }) {
-                running.activate(options: [.activateAllWindows])
-            } else {
-                NSWorkspace.shared.openApplication(at: url, configuration: .init()) { _, error in
-                    if let error { Task { @MainActor in
-                        (NSApplication.shared.delegate as? MacApplication)?.report(error.localizedDescription)
-                    } }
-                }
+            // Launch Services sends the normal reopen request to a running app.
+            // Activating its process alone leaves Finder with no window to show.
+            NSWorkspace.shared.openApplication(at: url, configuration: .init()) { _, error in
+                if let error { Task { @MainActor in
+                    (NSApplication.shared.delegate as? MacApplication)?.report(error.localizedDescription)
+                } }
             }
         case .link:
             if let address = item.url, let url = DockArchive.allowedURL(address), !NSWorkspace.shared.open(url) { application?.report("No application could open this link.") }
@@ -507,6 +512,13 @@ final class NativeDockController: NSWindowController, NSMenuDelegate {
             let target = magnification?.popoverAnchor(for: item.id)
             editor?.show(relativeTo: target?.view ?? anchor, rect: target?.rect)
         case .spacer: break
+        }
+    }
+
+    func openNewWindow(_ item: DockItem) {
+        folderController?.close()
+        NativeApplicationWindows.openNewWindow(item) { [weak self] error in
+            if let error { self?.application?.report(error) }
         }
     }
 

@@ -180,6 +180,10 @@ final class NativeFolderController: NSViewController, NSPopoverDelegate, NSTextF
             button.setAccessibilityLabel(item.title)
             let menu = NSMenu()
             menu.delegate = self
+            if NativeApplicationWindows.supportsNewWindow(item) {
+                menu.addItem(NativeMenuAction.item("New Window") { [weak self] in self?.dock?.openNewWindow(item) })
+                menu.addItem(.separator())
+            }
             menu.addItem(NativeMenuAction.item("Move to Dock") { [weak self] in
                 guard let self, let dock else { return }
                 do { try dock.store.moveOutOfFolder(item.id, folderID: folderID, in: dock.profileID) }
