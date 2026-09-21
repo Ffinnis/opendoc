@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.1.3
 
 - App menus inside folders now include Open, Show in Finder, Hide or Show, and Quit. New Window appears when supported. Menus refresh their running state when opened.
 - Bring an app's windows forward together when clicked in the dock or a folder, including windows on another display.
