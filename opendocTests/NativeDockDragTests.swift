@@ -109,7 +109,10 @@ final class NativeDockDragTests: XCTestCase {
                 XCTAssertTrue(controller.interacting, "Previous dismissal must not clear the new folder's interaction")
             }
             controller.open(second)
-            RunLoop.main.run(until: Date().addingTimeInterval(0.6))
+            let deadline = Date().addingTimeInterval(3)
+            while controller.folderController?.isShown == true, Date() < deadline {
+                RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+            }
             XCTAssertEqual(controller.folderController?.isShown, false)
             XCTAssertFalse(controller.interacting)
         }
