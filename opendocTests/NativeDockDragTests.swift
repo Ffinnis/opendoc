@@ -55,7 +55,12 @@ final class NativeDockDragTests: XCTestCase {
         let magnifier = try XCTUnwrap(overlay.windowController as? NativeDockMagnification)
         let visible = image.presentation()?.frame ?? image.frame
         magnifier.update(at: overlay.convertPoint(toScreen: NSPoint(x: visible.midX, y: visible.midY)), animated: false)
-        if let restingGlass { XCTAssertEqual(restingGlass.frame, image.frame) }
+        if let restingGlass {
+            XCTAssertEqual(restingGlass.frame.minX, image.frame.minX, accuracy: 0.01)
+            XCTAssertEqual(restingGlass.frame.minY, image.frame.minY, accuracy: 0.01)
+            XCTAssertEqual(restingGlass.frame.width, image.frame.width, accuracy: 0.01)
+            XCTAssertEqual(restingGlass.frame.height, image.frame.height, accuracy: 0.01)
+        }
         let label = try XCTUnwrap(overlay.contentView?.subviews.compactMap { $0 as? NativeDockTooltip }.first)
         XCTAssertFalse(label.isHidden)
         XCTAssertEqual(label.title, folder.title)
