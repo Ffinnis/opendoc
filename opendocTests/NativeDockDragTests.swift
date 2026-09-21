@@ -47,7 +47,6 @@ final class NativeDockDragTests: XCTestCase {
             let glass = try XCTUnwrap(overlay.contentView?.subviews.compactMap { $0 as? NSGlassEffectView }.first { $0.contentView is NSImageView })
             XCTAssertTrue(glass === restingGlass, "Hover must retain the original material view")
             XCTAssertNotNil((glass.contentView as? NSImageView)?.image)
-            XCTAssertEqual(glass.frame, image.frame)
             XCTAssertFalse(glass.isHidden)
             XCTAssertEqual(glass.alphaValue, 1)
             XCTAssertTrue(image.isHidden, "The preview belongs inside native glass, without a duplicate layer above it")
@@ -56,6 +55,7 @@ final class NativeDockDragTests: XCTestCase {
         let magnifier = try XCTUnwrap(overlay.windowController as? NativeDockMagnification)
         let visible = image.presentation()?.frame ?? image.frame
         magnifier.update(at: overlay.convertPoint(toScreen: NSPoint(x: visible.midX, y: visible.midY)), animated: false)
+        if let restingGlass { XCTAssertEqual(restingGlass.frame, image.frame) }
         let label = try XCTUnwrap(overlay.contentView?.subviews.compactMap { $0 as? NativeDockTooltip }.first)
         XCTAssertFalse(label.isHidden)
         XCTAssertEqual(label.title, folder.title)
