@@ -61,6 +61,23 @@ final class NativeFolderController: NSViewController, NSPopoverDelegate, NSTextF
     func popoverShouldClose(_ popover: NSPopover) -> Bool { !contextMenuOpen }
     func menuWillOpen(_ menu: NSMenu) { contextMenuOpen = true }
     func menuDidClose(_ menu: NSMenu) { contextMenuOpen = false }
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        guard let id = menu.identifier?.rawValue,
+              let item = folder?.children?.first(where: { $0.id.uuidString == id }) else { return }
+        // A folder can stay open while applications launch, quit, or hide.
+        // Build the actions at menu opening so their state stays current.
+        menu.removeAllItems()
+        dock?.addApplicationActions(to: menu, for: item)
+        menu.addItem(.separator())
+        menu.addItem(NativeMenuAction.item("Move to Dock") { [weak self] in
+            guard let self, let dock else { return }
+            do { try dock.store.moveOutOfFolder(item.id, folderID: folderID, in: dock.profileID) }
+            catch { dock.application?.report(error.localizedDescription) }
+        })
+        menu.addItem(NativeMenuAction.item("Remove from Folder") { [weak self] in
+            self?.edit { $0.children?.removeAll { $0.id == item.id } }
+        })
+    }
     func close(animated: Bool = true) {
         popover.animates = animated && !NativeMotion.reducesMotion
         popover.performClose(nil)
@@ -179,19 +196,9 @@ final class NativeFolderController: NSViewController, NSPopoverDelegate, NSTextF
             button.toolTip = titleWidth > button.bounds.width - 8 ? item.title : nil
             button.setAccessibilityLabel(item.title)
             let menu = NSMenu()
+            menu.identifier = .init(item.id.uuidString)
             menu.delegate = self
-            if NativeApplicationWindows.supportsNewWindow(item) {
-                menu.addItem(NativeMenuAction.item("New Window") { [weak self] in self?.dock?.openNewWindow(item) })
-                menu.addItem(.separator())
-            }
-            menu.addItem(NativeMenuAction.item("Move to Dock") { [weak self] in
-                guard let self, let dock else { return }
-                do { try dock.store.moveOutOfFolder(item.id, folderID: folderID, in: dock.profileID) }
-                catch { dock.application?.report(error.localizedDescription) }
-            })
-            menu.addItem(NativeMenuAction.item("Remove from Folder") { [weak self] in
-                self?.edit { $0.children?.removeAll { $0.id == item.id } }
-            })
+            menuNeedsUpdate(menu)
             button.menu = menu
             pageGrid.addSubview(button)
         }

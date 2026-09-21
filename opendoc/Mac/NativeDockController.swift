@@ -394,15 +394,34 @@ final class NativeDockController: NSWindowController, NSMenuDelegate {
     func menuWillOpen(_ menu: NSMenu) { interacting = true; reveal(animated: false) }
     func menuDidClose(_ menu: NSMenu) { interacting = false; scheduleHide() }
 
+    func addApplicationActions(to menu: NSMenu, for item: DockItem) {
+        menu.addItem(NativeMenuAction.item("Open") { [weak self] in
+            self?.folderController?.close()
+            self?.open(item)
+        })
+        if NativeApplicationWindows.supportsNewWindow(item) {
+            menu.addItem(NativeMenuAction.item("New Window") { [weak self] in self?.openNewWindow(item) })
+        }
+        if let url = item.applicationURL {
+            menu.addItem(NativeMenuAction.item("Show in Finder") {
+                NSWorkspace.shared.activateFileViewerSelecting([url])
+            })
+        }
+        if let running = NSWorkspace.shared.runningApplications.first(where: { $0.bundleURL?.absoluteString == item.url }) {
+            menu.addItem(.separator())
+            menu.addItem(NativeMenuAction.item(running.isHidden ? "Show" : "Hide") {
+                if running.isHidden { running.unhide() } else { running.hide() }
+            })
+            menu.addItem(NativeMenuAction.item("Quit \(item.title)") { running.terminate() })
+        }
+    }
+
     func menu(for item: DockItem?) -> NSMenu {
         let menu = NSMenu()
         menu.delegate = self
         if let item {
             if item.kind == .application {
-                menu.addItem(NativeMenuAction.item("Open") { [weak self] in self?.open(item) })
-                if NativeApplicationWindows.supportsNewWindow(item) {
-                    menu.addItem(NativeMenuAction.item("New Window") { [weak self] in self?.openNewWindow(item) })
-                }
+                addApplicationActions(to: menu, for: item)
                 menu.addItem(.separator())
             }
             if item.kind == .folder {
@@ -429,11 +448,6 @@ final class NativeDockController: NSWindowController, NSMenuDelegate {
                 menu.addItem(NativeMenuAction.item("Refresh Now") { NativeWidgetData.shared.refresh(item) })
             }
             if item.kind == .widget { menu.addItem(NativeMenuAction.item("Edit \(item.title)…") { [weak self] in self?.open(item) }) }
-            if item.kind == .application, NativeApplications.isRunning(item) {
-                menu.addItem(NativeMenuAction.item("Quit \(item.title)") {
-                    NSWorkspace.shared.runningApplications.first { $0.bundleURL?.absoluteString == item.url }?.terminate()
-                })
-            }
             if profile?.items.contains(where: { $0.id == item.id }) == true {
                 menu.addItem(NativeMenuAction.item("Remove from Dock") { [weak self] in self?.remove(item.id) })
             } else if item.kind == .application {

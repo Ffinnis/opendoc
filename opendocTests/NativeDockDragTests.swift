@@ -29,7 +29,44 @@ final class NativeDockDragTests: XCTestCase {
         }
         let button = try XCTUnwrap(buttons(in: controller.view).first { $0.title == finder.title })
         XCTAssertNotNil(button.menu?.item(withTitle: "New Window"))
+        XCTAssertNotNil(button.menu?.item(withTitle: "Open"))
+        XCTAssertNotNil(button.menu?.item(withTitle: "Show in Finder"))
         XCTAssertNotNil(button.menu?.item(withTitle: "Move to Dock"))
+    }
+
+    func testFolderApplicationMenuIncludesRunningActionsWithoutNewWindowSupport() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".json")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let store = DockStore(fileURL: url)
+        let running = NativeApplications.item(for: try XCTUnwrap(NSRunningApplication.current.bundleURL))
+        let stopped = NativeApplications.item(for: URL(fileURLWithPath: "/Applications/\(UUID().uuidString).app"))
+        var folder = DockItem(kind: .folder, title: "Application actions", symbol: "folder")
+        folder.children = [running, stopped]
+        let profile = DockProfile(name: "Menus", symbol: "folder", color: "green", items: [folder])
+        try store.create(profile)
+        let application = MacApplication()
+        let dock = NativeDockController(profileID: profile.id, store: store, application: application)
+        defer { dock.close() }
+        let controller = NativeFolderController(folderID: folder.id, dock: dock)
+        func buttons(in view: NSView) -> [NSButton] {
+            if let button = view as? NSButton { return [button] }
+            return view.subviews.flatMap { buttons(in: $0) }
+        }
+        for item in [running, stopped] {
+            let button = try XCTUnwrap(buttons(in: controller.view).first { $0.title == item.title })
+            let menu = try XCTUnwrap(button.menu)
+            XCTAssertNotNil(menu.item(withTitle: "Open"))
+            XCTAssertNotNil(menu.item(withTitle: "Show in Finder"))
+            XCTAssertNil(menu.item(withTitle: "New Window"))
+            XCTAssertEqual(menu.item(withTitle: "Quit \(item.title)") != nil, item.id == running.id)
+            let visibilityTitle = NSRunningApplication.current.isHidden ? "Show" : "Hide"
+            XCTAssertEqual(menu.item(withTitle: visibilityTitle) != nil, item.id == running.id)
+            let titles = menu.items.map(\.title)
+            let appActions = Array(titles.dropLast(2))
+            XCTAssertEqual(appActions, dock.menu(for: item).items.prefix(appActions.count).map(\.title))
+            controller.menuNeedsUpdate(menu)
+            XCTAssertEqual(menu.items.map(\.title), titles, "Refreshing must not duplicate actions")
+        }
     }
 
     func testFolderPagesKeepSizeAndClampAfterRemovingLastPage() throws {
