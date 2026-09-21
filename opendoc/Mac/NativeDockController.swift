@@ -18,7 +18,7 @@ final class NativeDockController: NSWindowController, NSMenuDelegate {
     private var workspaceObservers: [NSObjectProtocol] = []
     private var screenObserver: NSObjectProtocol?
     private var editor: NativeWidgetEditor?
-    private var folderController: NativeFolderController?
+    private(set) var folderController: NativeFolderController?
     private var widgetLibrary: NativeWidgetLibrary?
     private var groupTarget: UUID?
     private var groupCandidate: (UUID, Date)?
@@ -461,7 +461,12 @@ final class NativeDockController: NSWindowController, NSMenuDelegate {
         switch item.kind {
         case .folder:
             guard editor?.close() != false else { return }
-            if folderController?.isShown == true { folderController?.close(); return }
+            if let folderController, folderController.isShown {
+                if folderController.folderID == item.id { folderController.close(); return }
+                // Finish the previous popover's close callback before the new
+                // one claims interaction, so its dismissal cannot hide the dock.
+                folderController.close(animated: false)
+            }
             guard let anchor = itemViews.first(where: { $0.item.id == item.id }) else { return }
             folderController = NativeFolderController(folderID: item.id, dock: self)
             let target = magnification?.popoverAnchor(for: item.id)

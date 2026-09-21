@@ -3,7 +3,7 @@ import AppKit
 import UniformTypeIdentifiers
 
 final class NativeFolderController: NSViewController, NSPopoverDelegate, NSTextFieldDelegate, NSMenuDelegate {
-    private let folderID: UUID
+    let folderID: UUID
     private weak var dock: NativeDockController?
     private let popover = NSPopover()
     private weak var firstAppButton: NSButton?
@@ -55,7 +55,10 @@ final class NativeFolderController: NSViewController, NSPopoverDelegate, NSTextF
     func popoverShouldClose(_ popover: NSPopover) -> Bool { !contextMenuOpen }
     func menuWillOpen(_ menu: NSMenu) { contextMenuOpen = true }
     func menuDidClose(_ menu: NSMenu) { contextMenuOpen = false }
-    func close() { popover.performClose(nil) }
+    func close(animated: Bool = true) {
+        popover.animates = animated && !NativeMotion.reducesMotion
+        popover.performClose(nil)
+    }
     func popoverDidClose(_ notification: Notification) {
         dock?.interacting = false; dock?.scheduleHide()
         popover.contentViewController = nil

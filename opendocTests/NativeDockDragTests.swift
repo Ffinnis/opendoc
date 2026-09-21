@@ -6,6 +6,40 @@ import XCTest
 
 @MainActor
 final class NativeDockDragTests: XCTestCase {
+    func testClickingAnotherFolderSwitchesImmediatelyAndSameFolderCloses() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".json")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let store = DockStore(fileURL: url)
+        let application = MacApplication()
+        for position in ["Bottom", "Left", "Right"] {
+            var first = DockItem(kind: .folder, title: "First", symbol: "folder")
+            var second = DockItem(kind: .folder, title: "Second", symbol: "folder")
+            first.children = []; second.children = []
+            var profile = DockProfile(name: "Folder switching", symbol: "folder", color: "green", items: [first, second])
+            profile.appearance.autoHide = false
+            profile.appearance.position = position
+            try store.create(profile)
+            let controller = NativeDockController(profileID: profile.id, store: store, application: application)
+            defer { controller.close() }
+            controller.showWindow(nil)
+            for item in [first, second, first, second] {
+                let previous = controller.folderController
+                controller.open(item)
+                XCTAssertEqual(controller.folderController?.folderID, item.id)
+                XCTAssertEqual(controller.folderController?.isShown, true, "\(position): \(item.title)")
+                XCTAssertTrue(controller.interacting)
+                if let previous { XCTAssertFalse(previous.isShown) }
+                RunLoop.main.run(until: Date().addingTimeInterval(0.25))
+                XCTAssertEqual(controller.folderController?.isShown, true)
+                XCTAssertTrue(controller.interacting, "Previous dismissal must not clear the new folder's interaction")
+            }
+            controller.open(second)
+            RunLoop.main.run(until: Date().addingTimeInterval(0.6))
+            XCTAssertEqual(controller.folderController?.isShown, false)
+            XCTAssertFalse(controller.interacting)
+        }
+    }
+
     func testRunningAppsDeduplicateBundlePathsAndExcludeFolderChildren() {
         let a = URL(fileURLWithPath: "/Applications/A.app")
         let b = URL(fileURLWithPath: "/Applications/B.app")
