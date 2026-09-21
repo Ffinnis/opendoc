@@ -53,7 +53,9 @@ Do not publish an empty draft or an app still waiting for notarization. Do not o
 
 ## First release and forks
 
-Set GitHub Pages to use **GitHub Actions**. Before the first stable release, run **Deploy updates** manually. It publishes a signed empty feed, so update checks work but offer no download yet.
+Set GitHub Pages to use **GitHub Actions**. In the `github-pages` environment's deployment rules, allow the `main` branch and release tags matching `v*.*.*`. A release workflow runs from its tag, so allowing only `main` blocks publication of the feed even after validation passes.
+
+Before the first stable release, run **Deploy updates** manually. It publishes a signed empty feed, so update checks work but offer no download yet.
 
 Forks need their own repository URLs, update feed, and Sparkle signing key. Update the scripts, workflow, and app configuration before publishing. Keep the bundled [Sparkle license](../opendoc/Sparkle-LICENSE.txt) in distributions.
 
