@@ -145,13 +145,20 @@ final class NativeDockDragTests: XCTestCase {
                 XCTAssertEqual(controller.folderController?.isShown, true)
                 XCTAssertTrue(controller.interacting, "Previous dismissal must not clear the new folder's interaction")
             }
+            // AppKit can attach a tooltip or another auxiliary window to the
+            // popover. An explicit folder toggle must still close it.
+            let popoverWindow = try XCTUnwrap(controller.folderController?.view.window)
+            let auxiliary = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 40, height: 20),
+                                    styleMask: .borderless, backing: .buffered, defer: false)
+            popoverWindow.addChildWindow(auxiliary, ordered: .above)
+            defer { popoverWindow.removeChildWindow(auxiliary); auxiliary.orderOut(nil) }
             controller.open(second)
             let deadline = Date().addingTimeInterval(3)
             while controller.folderController?.isShown == true, Date() < deadline {
                 RunLoop.main.run(until: Date().addingTimeInterval(0.02))
             }
-            XCTAssertEqual(controller.folderController?.isShown, false)
-            XCTAssertFalse(controller.interacting)
+            XCTAssertEqual(controller.folderController?.isShown, false, "\(position): explicit toggle must close with an auxiliary window")
+            XCTAssertFalse(controller.interacting, "\(position): closed folder must release interaction")
         }
     }
 

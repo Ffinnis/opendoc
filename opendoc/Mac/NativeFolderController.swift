@@ -48,7 +48,7 @@ final class NativeFolderController: NSViewController, NSPopoverDelegate, NSTextF
     override func loadView() { view = FlippedNativeView(); render() }
 
     func show(relativeTo anchor: NSView, rect: NSRect? = nil) {
-        if popover.isShown { popover.performClose(nil); return }
+        if popover.isShown { close(); return }
         dock?.interacting = true
         dock?.reveal(animated: false)
         popover.animates = !NativeMotion.reducesMotion
@@ -80,7 +80,9 @@ final class NativeFolderController: NSViewController, NSPopoverDelegate, NSTextF
     }
     func close(animated: Bool = true) {
         popover.animates = animated && !NativeMotion.reducesMotion
-        popover.performClose(nil)
+        // Explicit folder actions must also close auxiliary windows, such as
+        // tooltips. performClose refuses to close a popover with child windows.
+        popover.close()
     }
     func popoverDidClose(_ notification: Notification) {
         dock?.interacting = false; dock?.scheduleHide()
@@ -183,7 +185,7 @@ final class NativeFolderController: NSViewController, NSPopoverDelegate, NSTextF
             let x = CGFloat(index % columns) * cellWidth
             let y = CGFloat(index / columns) * rowHeight
             let button = FolderAppButton(item) { [weak self] in
-                self?.popover.performClose(nil)
+                self?.close()
                 self?.dock?.open(item)
             }
             appButtons.append(button)
