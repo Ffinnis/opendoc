@@ -1,16 +1,12 @@
 # Contributing to Open Doc
 
-Bug fixes, native UI improvements, accessibility work, tests, and documentation are welcome. For a large feature or architectural change, open an issue describing the problem and intended behavior before starting implementation.
+Bug fixes, UI improvements, accessibility work, and clearer documentation are welcome. For a large feature, open an issue first so we can agree on the behavior before you spend time building it.
 
 ## Build from source
 
-Use a Mac with Xcode 26 or later and its command-line tools selected in Xcode Settings. The deployment target is macOS 14. Xcode resolves the pinned Sparkle package automatically.
+You need a Mac with Xcode 26 or later. The app runs on macOS 14 or later. Xcode downloads the pinned Sparkle dependency automatically.
 
-Open `opendoc.xcodeproj` and select the shared `opendoc` scheme. Choose My Mac. The project does not select a signing team for contributors. For signed development or distribution, create `Configuration/LocalSigning.xcconfig` with `DEVELOPMENT_TEAM = YOUR_TEAM_ID`. This ignored file selects your team in Xcode for all targets without committing account details. Xcode can manage development signing automatically. Keep certificates and provisioning profiles out of the repository.
-
-See [Signing and notarization](docs/Signing.md) for Developer ID releases.
-
-Unsigned Mac build:
+Open `opendoc.xcodeproj`, choose the `opendoc` scheme, and select **My Mac**. For a command-line build without a signing account:
 
 ```sh
 xcodebuild -project opendoc.xcodeproj -scheme opendoc \
@@ -18,26 +14,30 @@ xcodebuild -project opendoc.xcodeproj -scheme opendoc \
   -derivedDataPath build/mac CODE_SIGNING_ALLOWED=NO build
 ```
 
-## Use isolated development data
+To use it as your everyday dock, launch the built app:
 
-A normal Mac launch replaces Apple's Dock by default. It reads and writes the same workspace as an installed copy, and a build launched from Applications may update `~/.local/bin/opendoc`. Do not install a development build over your everyday copy just to test a change.
+```sh
+open build/mac/Build/Products/Release/opendoc.app
+```
 
-For a settings-only session with a fresh temporary archive and system Dock replacement disabled:
+A normal launch uses your real workspace and can hide Apple's Dock. For development, use the isolated session below. See [Signing](docs/Signing.md) if you need a signed build.
+
+## Test without changing your dock
+
+Start a separate settings session with temporary data:
 
 ```sh
 build/mac/Build/Products/Release/opendoc.app/Contents/MacOS/opendoc \
   --ui-testing "$(uuidgen)"
 ```
 
-The test session skips pinned-app import, CLI installation, and the agent socket. To exercise actual replacement or the installed CLI, use a separate macOS account or disposable machine. Stop only a test process you started. Never kill apps by a broad name/path pattern.
+This session does not replace Apple's Dock, import your pinned apps, install the CLI, or start the agent connection. Test actual Dock replacement and the installed CLI in a separate macOS account or disposable machine.
 
-Tests that touch persistence should construct `DockStore(fileURL:)` with a fresh temporary URL. Never write directly to a running user's archive. The installed `opendoc` command is for deliberate live changes, as described in [the CLI guide](Examples/Agent-CLI.md).
+Tests that save data must use a fresh `DockStore(fileURL:)`. Do not use the installed app or `~/Library/Application Support/OpenDoc` as test data. Stop only processes you started for testing.
 
-## Validate a change
+## Check your change
 
-Run the Mac build for code or configuration changes.
-
-Run unit tests:
+Run the Mac build for code or configuration changes. Run unit tests with:
 
 ```sh
 xcodebuild -project opendoc.xcodeproj -scheme opendoc \
@@ -46,29 +46,16 @@ xcodebuild -project opendoc.xcodeproj -scheme opendoc \
   -parallel-testing-enabled NO -only-testing:opendocTests test
 ```
 
-UI tests require a logged-in desktop, a working XCTest runner, and macOS Automation permission:
+Add a focused regression test for a bug fix. For dock interactions, also check edge items, side docks, rapid pointer movement, dragging, popovers, auto-hide, and Reduce Motion. For CLI changes, check command help, rejected edits, dry runs, and revision conflicts.
 
-```sh
-xcodebuild -project opendoc.xcodeproj -scheme opendoc \
-  -destination 'platform=macOS' -derivedDataPath build/tests \
-  DEVELOPMENT_TEAM= CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual \
-  -parallel-testing-enabled NO -only-testing:opendocUITests/NativeDockUITests test
-```
+UI tests need a logged-in desktop and the required macOS Automation permission. Use the same command with `-only-testing:opendocUITests/NativeDockUITests` instead of the unit-test target.
 
-If the runner cannot launch, capture the error and report the run as blocked. `build-for-testing` checks compilation only. Do not describe it as a test pass. The GitHub workflow runs Mac unit tests with ad hoc signing and checks CLI help; it does not run UI tests.
+GitHub CI runs unit tests with Reduce Motion on and off, checks offline CLI help, and tests update signature validation. It does not run UI tests. Report what actually ran. A successful build is not a passing test run, and a screenshot does not establish animation frame rate.
 
-Add focused regression tests for changed behavior. Test rejected edits without state changes, persistence round trips, and undo when relevant. Avoid tests that merely repeat implementation details.
+## Send a pull request
 
-For dock interaction changes, check bottom and side docks, the first and last item, mixed widgets/apps, narrow displays, rapid hover changes, click and right-click, folder/widget popovers, auto-hide, and Reduce Motion. Keep animation targets clickable during transitions. Measure frame pacing in a Release build before making performance claims.
+Explain the problem, the resulting behavior, and how you checked it. Include before/after images for visible changes and mention any checks you could not run. Keep unrelated edits in separate PRs.
 
-For CLI changes, check offline help, schema, required/unknown fields, dry-run, revision conflicts, and result/error JSON. For web widgets, prefer deterministic fixtures; live endpoints are supplemental checks.
+Keep the interface native to macOS. Changes must preserve saved workspaces, undo, and the ability to restore Apple's Dock. Read [AGENTS.md](AGENTS.md) for the project rules that also apply to coding agents.
 
-## Submit a pull request
-
-Keep each PR focused on one problem. Explain what triggers the problem, what changes for the user, and which checks actually ran. Include before/after images for UI changes and note checks you could not run. Review generated or agent-written changes yourself.
-
-Preserve native AppKit, supported archive decoding, and reversible system Dock behavior. Prefer Apple's frameworks and existing code to new dependencies or generic layers. Update user docs when behavior changes, and CLI help when commands change. Keep developer setup details in this guide.
-
-Do not include personal workspace exports, endpoint credentials, signing identities, app bundles, build results, or screenshots containing private information. Application icons displayed at runtime belong to their respective owners; do not bundle other apps' artwork or Dockset assets.
-
-Contributions are provided under the repository's [MIT license](LICENSE). Keep existing copyright notices and identify third-party code and its license in the PR. Be specific and respectful in reviews; critique the code and behavior.
+Do not include personal workspace exports, credentials, signing keys, build output, or screenshots with private information. Do not bundle other apps' icons or Dockset assets. Contributions use the [MIT license](LICENSE); keep existing copyright and third-party license notices.

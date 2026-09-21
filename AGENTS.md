@@ -1,15 +1,15 @@
 # Working on Open Doc
 
-Keep this file limited to project-specific mistakes worth preventing. If a rule compensates for confusing code, fix the code first. Build commands and contribution expectations live in [CONTRIBUTING.md](CONTRIBUTING.md).
+Read [CONTRIBUTING.md](CONTRIBUTING.md) for setup and checks. To configure a user's running dock, use the [CLI guide](Examples/Agent-CLI.md).
 
-- Open Doc targets macOS only. The desktop dock is native AppKit; do not replace it with SwiftUI or a web UI.
-- Normal Mac launch can hide Apple's Dock, import pinned apps, and install the CLI when run from Applications. Use `--ui-testing <fresh UUID>` for an isolated settings session. Do not use the installed app or its workspace as a test fixture.
-- `~/Library/Application Support/OpenDoc` contains real user state. For authorized live edits, use `opendoc help`, `opendoc schema`, and `opendoc state`; apply changes through the CLI, not direct JSON writes. After a timed-out mutation, read state before retrying. See [the CLI guide](Examples/Agent-CLI.md).
-- Persist edits through `DockStore`. Preserve validation, atomic writes, undo, and ownership by profile ID. The selected Settings profile may differ from the dock being edited.
-- Dock replacement must remain reversible on quit, disable, last-dock hide, and crash recovery. Preserve the original system preferences. Do not test this by killing processes by name or replacing the contributor's installed app.
-- Mouse movement must not fetch data, evaluate scripts, rebuild the dock, or redraw widget text. Align hit testing with presented animation geometry and keep widgets inside the shelf. Check edge items, rapid direction changes, clicks, and Reduce Motion after motion changes.
-- Custom scripts run in a bounded worker without native bridges. HTML extraction is inert. Preserve those boundaries and request limits when changing widgets.
-- CLI help, schema, validation, and execution must agree. Test affected commands with an isolated store and include rejected edits that leave state unchanged.
-- Report build, test execution, and visual/performance checks separately. A compiled test target is not a passing test run; a screenshot is not evidence of 120 fps.
+- Open Doc targets macOS only. Use AppKit for the desktop interface. Do not replace it with SwiftUI or a web UI.
+- A normal launch can hide Apple's Dock, import pinned apps, and install the CLI from Applications. Use `--ui-testing <fresh UUID>` for an isolated settings session. The installed app and its workspace are not test fixtures.
+- `~/Library/Application Support/OpenDoc` contains real user data. For authorized live edits, use `opendoc help`, `opendoc schema`, and `opendoc state`, then apply changes through the CLI. Do not write the JSON directly. After a timeout, read state before retrying an edit.
+- Save edits through `DockStore`. Preserve validation, atomic writes, undo, and the target profile ID. The dock being edited may differ from the profile selected in Settings.
+- Restore Apple's original Dock preferences on quit, replacement disable, hiding the last dock, and crash recovery. Do not test this by killing apps by name or replacing a contributor's installed app.
+- Pointer movement must not fetch data, run scripts, rebuild the dock, or redraw widget text. Click targets must follow the visible icons. Keep widgets inside the shelf and check edge items, rapid direction changes, clicks, and Reduce Motion after animation changes.
+- Keep custom scripts in their bounded worker without native bridges. HTML extraction must not run page scripts. Preserve request and execution limits.
+- CLI help, schema, validation, and execution must agree. Test commands with an isolated store, including rejected edits that leave state unchanged.
+- Report builds, executed tests, and visual or performance checks separately. Compiling a test target is not running it. A screenshot does not prove 120 fps.
 
-Add guidance only after a concrete failure exposes a lasting constraint. Keep file inventories, session history, local machine paths, and generic coding advice out of this file.
+Keep this file focused on project-specific mistakes worth preventing. Put build instructions and general contribution guidance in CONTRIBUTING.md. Add a rule only after a concrete failure shows it is needed.

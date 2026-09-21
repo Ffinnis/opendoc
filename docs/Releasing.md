@@ -1,55 +1,66 @@
-# Releases and automatic updates
+# Publish an Open Doc release
 
-Open Doc uses Sparkle 2.10, pinned through Swift Package Manager. Installed copies check the signed feed at `https://ffinnis.github.io/opendoc/appcast.xml` daily. Updates download from GitHub Releases. Both the feed and archives have Ed25519 signatures; the app also uses Developer ID signing and notarization. Users can disable automatic checks in the menu. The updater does not start for CLI workers, isolated tests, or development builds outside Applications.
+Releases are built and signed on the release Mac, uploaded to Apple for notarization, then published on GitHub. GitHub Actions validates the download before updating the Sparkle feed.
 
-## Signing on the release Mac
+Users receive updates from [GitHub Releases](https://github.com/Ffinnis/opendoc/releases) through `https://ffinnis.github.io/opendoc/appcast.xml`. Installed apps check daily. Development builds outside Applications and isolated test sessions do not start the updater.
 
-Sign into the Apple Developer account in Xcode and set `Configuration/LocalSigning.xcconfig` as described in [Signing](Signing.md). The release Mac also needs `gh auth login` with access to `Ffinnis/opendoc`.
+## Set up the release Mac
 
-Resolve Sparkle tools:
+Complete [Signing](Signing.md) and sign into `gh` with an account that can publish to `Ffinnis/opendoc`.
+
+The Mac also needs the existing Sparkle signing key in its login Keychain under account `roman.potapov.opendoc`. Do not generate a new key for each release. Back it up securely before replacing the release Mac; never commit or upload the private key. GitHub Actions does not need Apple credentials or this key.
+
+Download the pinned Sparkle tools:
 
 ```sh
 xcodebuild -resolvePackageDependencies -project opendoc.xcodeproj -scheme opendoc \
   -clonedSourcePackagesDirPath build/SourcePackages
 ```
 
-The Sparkle private key is stored in this Mac's login Keychain under account `roman.potapov.opendoc`. `SUPublicEDKey` in `Configuration/MacInfo.plist` contains only the public key. Do not regenerate the key for each release. Back up the private key securely before replacing this Mac. Never commit or attach private signing keys to a release.
+## Prepare a version
 
-Xcode uses its signed-in account and cloud-managed Developer ID certificate. GitHub Actions does not need Apple credentials or the Sparkle private key. Building and signing happen on the release Mac; validating and deploying the update feed happen automatically on GitHub after publication.
-
-## Publish a version
-
-1. Increment `MARKETING_VERSION` and `CURRENT_PROJECT_VERSION` in Xcode for all configurations. The build number must increase for every update, even if the marketing version stays the same.
-2. Run the Mac tests, commit the changes, and push `main`. Prepare requires a clean checkout and records that source commit with the archive.
-3. Build the universal Mac archive and submit it for notarization:
+1. Update `MARKETING_VERSION` and increase `CURRENT_PROJECT_VERSION` in all project configurations.
+2. Update [CHANGELOG.md](../CHANGELOG.md), run the checks in [Contributing](../CONTRIBUTING.md#check-your-change), commit, and push.
+3. Run the following command with the new version:
 
 ```sh
 python3 Scripts/release.py prepare 1.2.0
 ```
 
-4. Once Apple finishes processing, export, verify, sign the update archive, and publish:
+The checkout must be clean. The script saves the source commit and build number, builds a universal Mac archive, and submits it to Apple. Keep `build/releases/1.2.0` until publication finishes.
+
+## Publish after notarization
 
 ```sh
 python3 Scripts/release.py publish 1.2.0
 ```
 
-`publish` fails while notarization is pending or rejected. Keep the archive and retry after Apple completes processing; do not submit another copy just to poll. The script verifies notarization before creating a release, uploads the ZIP and signed appcast to a draft, then publishes it. The tag points to the commit recorded during preparation.
+If Apple is still processing, keep the archive and retry this command later. Do not run `prepare` again to check status. If Apple rejects the app, resolve the rejection before publishing.
 
-The **Deploy updates** workflow downloads the latest stable release, verifies the signed feed and archive against the public key, validates the app identity and build number, and checks code signing and notarization. Only then does it deploy `appcast.xml` to GitHub Pages. Prereleases do not enter the stable feed. A failed validation leaves the previous feed deployed.
+Once notarization passes, the script verifies the app, signs the ZIP and update feed, uploads them to a draft, and publishes the release. The tag points to the source commit recorded during preparation.
 
-If publication stops after creating a draft, inspect its assets before publishing that existing draft in GitHub. Do not recreate or overwrite a published version. Use a higher build number for corrections.
+Check the release notes for clear descriptions of user-visible changes. Then check the **Deploy updates** workflow. A release page alone does not confirm that automatic updates are available. The workflow must validate the files and finish deploying the feed. Prereleases stay out of the stable feed.
 
-## First deployment and forks
+## Recover an interrupted publication
 
-GitHub Pages must use **GitHub Actions** as its deployment source. Run **Deploy updates** manually to initialize the feed before the first release. It deploys the signed empty `Updates/appcast.xml` when no stable release exists. Automatic checks then work but offer no download until the first notarized release is published.
-
-Forks must change the repository URLs in the scripts, workflow, and Info.plist and use their own update-signing key. Do not publish updates to the upstream feed. The bundled [Sparkle license](../opendoc/Sparkle-LICENSE.txt) must accompany distributions.
-
-## Checks
+If a draft for that version already exists, inspect it before continuing. The script does not resume an existing draft automatically. Confirm its source commit, upload the verified ZIP and signed `appcast.xml` if missing, and validate the local assets before publishing the draft:
 
 ```sh
-python3 Scripts/validate-release.py --feed Updates/appcast.xml
 python3 Scripts/validate-release.py build/releases/1.2.0/assets v1.2.0
 ```
 
-The first verifies the feed without private keys. The second also validates its downloaded app archive. Avoid editing signed XML by hand; regenerate it using Sparkle's tools.
+Do not publish an empty draft or an app still waiting for notarization. Do not overwrite a published version. Corrections need a new release with a higher build number.
+
+## First release and forks
+
+Set GitHub Pages to use **GitHub Actions**. Before the first stable release, run **Deploy updates** manually. It publishes a signed empty feed, so update checks work but offer no download yet.
+
+Forks need their own repository URLs, update feed, and Sparkle signing key. Update the scripts, workflow, and app configuration before publishing. Keep the bundled [Sparkle license](../opendoc/Sparkle-LICENSE.txt) in distributions.
+
+To verify the initial feed without private keys:
+
+```sh
+python3 Scripts/validate-release.py --feed Updates/appcast.xml
+```
+
+Regenerate signed feeds with Sparkle's tools. Editing the XML by hand invalidates its signature.

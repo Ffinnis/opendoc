@@ -1,62 +1,35 @@
-# Signing and notarization
+# Sign a Mac build
 
-Open Doc uses automatic Apple Development signing for Xcode builds. Add your Apple Account in Xcode Settings, then create the ignored `Configuration/LocalSigning.xcconfig`:
+You do not need an Apple signing account for the local build described in [Contributing](../CONTRIBUTING.md#build-from-source). Signing is needed for distribution.
+
+## Set up Xcode
+
+Add your Apple Account in Xcode Settings. Create `Configuration/LocalSigning.xcconfig` with your team ID:
 
 ```xcconfig
 DEVELOPMENT_TEAM = YOUR_TEAM_ID
 ```
 
-Select **My Mac** and the **opendoc** scheme. The Mac app does not require a provisioning profile. The project supports macOS only and does not request iOS provisioning.
+This file is ignored by Git. Keep account details and signing keys out of the repository. Choose the **opendoc** scheme and **My Mac**. The project targets macOS only.
 
-## Distribute the Mac app
+Xcode uses automatic Apple Development signing for local builds. A Mac distribution needs an Apple Developer Program membership and a Developer ID Application certificate. Xcode can use a cloud-managed certificate through the signed-in account.
 
-An Apple Developer Program membership is required. Archive both Mac architectures:
+## Distribute the app
 
-```sh
-xcodebuild -project opendoc.xcodeproj -scheme opendoc \
-  -configuration Release -destination 'generic/platform=macOS' \
-  -archivePath build/distribution/OpenDoc.xcarchive \
-  -allowProvisioningUpdates archive
-```
+For an Open Doc release, follow [Releasing](Releasing.md). Its script builds both Mac architectures and submits the archive to Apple.
 
-In Xcode Organizer, distribute the archive with **Developer ID**, automatic signing, and notarization. Xcode can use a cloud-managed Developer ID Application certificate through the signed-in account. A local Developer ID private key is not required for this export workflow. The development signing private key stays in Keychain.
+You can also archive through Xcode and choose **Developer ID**, automatic signing, and notarization in Organizer.
 
-For command-line export, create an ignored `build/distribution/ExportOptions.plist` containing:
+An upload success means Apple received the app. Wait for notarization to finish before distributing it. Keep the archive while it is processing; uploading another copy will not check the first submission's status.
 
-```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict>
-  <key>method</key><string>developer-id</string>
-  <key>teamID</key><string>YOUR_TEAM_ID</string>
-  <key>signingStyle</key><string>automatic</string>
-  <key>destination</key><string>upload</string>
-</dict></plist>
-```
-
-Submit the archive to Apple's notary service:
+After export, verify the app. Replace the example path with your exported bundle:
 
 ```sh
-xcodebuild -exportArchive \
-  -archivePath build/distribution/OpenDoc.xcarchive \
-  -exportOptionsPlist build/distribution/ExportOptions.plist \
-  -allowProvisioningUpdates
+codesign --verify --deep --strict /path/to/opendoc.app
+xcrun stapler validate /path/to/opendoc.app
+spctl --assess --type execute --verbose=2 /path/to/opendoc.app
 ```
 
-An upload success means Apple received the app; it does not mean notarization passed. When Apple finishes processing, export the notarized app:
+Keep the archive and its debug symbols for each release. Never commit private keys, account credentials, provisioning profiles, or app bundles.
 
-```sh
-xcodebuild -exportNotarizedApp \
-  -archivePath build/distribution/OpenDoc.xcarchive \
-  -exportPath build/distribution/notarized
-
-codesign --verify --deep --strict build/distribution/notarized/opendoc.app
-xcrun stapler validate build/distribution/notarized/opendoc.app
-spctl --assess --type execute --verbose=2 build/distribution/notarized/opendoc.app
-```
-
-If export reports that the archive is still processing, retain the archive and check again later. Do not upload another copy just to poll status. For a signed local export without notarization, use `destination = export`; that output is not a notarized release.
-
-Never commit signing private keys, account credentials, provisioning profiles, or app bundles. Retain the archive for each distributed build, including its debug symbols.
-
-Apple documentation: [Developer ID](https://developer.apple.com/developer-id/), [notarization workflow](https://developer.apple.com/documentation/security/customizing-the-notarization-workflow).
+Apple's guides cover [Developer ID](https://developer.apple.com/developer-id/) and the [notarization workflow](https://developer.apple.com/documentation/security/customizing-the-notarization-workflow).

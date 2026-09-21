@@ -1,27 +1,47 @@
-# Agent CLI
+# Control Open Doc from the command line
 
-Move Open Doc to `/Applications` or `~/Applications` and launch it once. The app installs `opendoc` in `~/.local/bin`. If needed, it adds that directory to your zsh or bash login profile; open a new terminal to load the change. No repository checkout or package manager is required.
+The `opendoc` command lets you inspect docks, add or edit widgets, and change dock appearance. It works with scripts and AI agents. No mouse control or repository checkout is needed.
+
+The CLI does not yet create docks or move apps into folders. Use the app for those actions. It is a local CLI, not an MCP server.
+
+## Set up
+
+Move Open Doc to `/Applications` or `~/Applications` and launch it. The app installs the command in `~/.local/bin` and, if needed, adds that directory to your zsh or bash login profile. Open a new terminal afterward.
+
+If the command is missing, choose **Install Command Line Tool...** in the app menu. Installation preserves any unrelated command already named `opendoc`. Launching the app again after moving it repairs its launcher.
 
 ```sh
-opendoc --help
+opendoc help
 opendoc help widget.add
-opendoc widget.update --help
 opendoc help --json
-opendoc schema
-opendoc state
 ```
 
-The app menu also includes **Install Command Line Tool…** for repair or development builds. Installation preserves unrelated commands with the same name. Launching the app after moving it updates the launcher. The running app handles commands over a local socket; launching the CLI does not open a second GUI instance.
+Help works while the app is closed. All other commands need Open Doc running. Calling the CLI does not launch a second copy of the app.
 
-Help is bundled in the executable and works even when the app is closed. Each command explains required input fields, accepted values, an example, the result, and patch rules. `opendoc help COMMAND --json` returns the same documentation as structured JSON. The live `schema` response also includes `commandHelp`.
+## Start with the current state
 
-For development only, `Scripts/opendoc` can target a build through `OPENDOC_APP`. The installed command does not depend on that script or this repository.
+```sh
+opendoc state
+opendoc schema
+```
 
-Responses contain `ok`, `result`, and `revision`. Failures contain `ok: false` and an `error`, with exit status 1. UUIDs and the revision come from `state`. No UI automation or manual workspace-file editing is involved.
+`state` returns the docks in `result.archive.profiles` and a top-level `revision`. Choose the intended dock by name, then use its `id` in commands. Widget IDs come from that dock's `items`. Commands require UUIDs, not names.
 
-## Add an interactive widget
+`schema` lists widget kinds, defaults, templates, and accepted appearance values. For exact command fields and examples, use `opendoc help COMMAND`. Add `--json` to help for structured output.
 
-Save this as `/tmp/water-widget.json`, replacing `DOCK_UUID` with the target dock's ID:
+| Command | Purpose |
+| --- | --- |
+| `state` | Read docks, items, visible docks, and the current revision. |
+| `schema` | Discover supported configuration. |
+| `widget.add` | Add a widget to an existing dock. |
+| `widget.update` | Change selected widget fields. |
+| `widget.remove` | Remove a widget. |
+| `widget.preview` | Evaluate custom code without saving a widget. |
+| `dock.update` | Change a dock's name, appearance, or visibility. |
+
+## Add a water counter
+
+Save this as `/tmp/water-widget.json`. Replace `DOCK_UUID` with the dock's `id` from `state`.
 
 ```json
 {
@@ -35,7 +55,7 @@ Save this as `/tmp/water-widget.json`, replacing `DOCK_UUID` with the target doc
       "resetDaily": true,
       "renderScript": "return { value: `${state.count} / ${state.goal}`, detail: 'Glasses today', progress: state.count / state.goal };",
       "actions": [
-        {"title": "Add a Glass", "script": "state.count += 1; return state;"},
+        {"title": "Add a glass", "script": "state.count += 1; return state;"},
         {"title": "Reset", "script": "state.count = 0; return state;"}
       ]
     }
@@ -43,30 +63,41 @@ Save this as `/tmp/water-widget.json`, replacing `DOCK_UUID` with the target doc
 }
 ```
 
+Validate first, then apply. Replace `REVISION` with the revision from your latest `state` response.
+
 ```sh
 opendoc widget.add --input /tmp/water-widget.json --dry-run
 opendoc widget.add --input /tmp/water-widget.json --if-revision REVISION
+opendoc state
 ```
 
-The app generates missing action IDs. The response includes the created widget's ID. Widget kinds and optional configuration defaults are returned by `schema`.
+The add response contains the new widget in `result`. Keep `result.id` for later edits. Button IDs are generated automatically.
 
-## Edit a widget or the dock
+## Edit appearance
+
+This example validates settings for a bottom dock with clear glass and no added tint:
 
 ```sh
-opendoc widget.update --input - <<'JSON'
-{"itemID":"ITEM_UUID","patch":{"title":"Daily water","custom":{"renderScript":"return { value: state.count + ' glasses', detail: 'Today', progress: state.count / 8 };"}}}
-JSON
-
 opendoc dock.update --input - --dry-run <<'JSON'
-{"dockID":"DOCK_UUID","patch":{"appearance":{"size":48,"material":"Glass","position":"Bottom","autoHide":true,"showLabels":false}}}
+{
+  "dockID": "DOCK_UUID",
+  "patch": {
+    "appearance": {
+      "position": "Bottom",
+      "material": "Glass",
+      "glassStyle": "Clear",
+      "glassTint": 0,
+      "size": 48,
+      "autoHide": true
+    }
+  }
+}
 JSON
 ```
 
-Remove `--dry-run` to apply an appearance edit. `dock.update` also accepts a `visible` boolean. Hiding the last visible dock restores Apple's Dock through the app's existing behavior.
+Replace the dock ID, then replace `--dry-run` with `--if-revision REVISION` to apply it. `dock.update` also accepts `visible`. Hiding the last visible dock restores Apple's Dock.
 
-Objects merge; arrays and the numeric `state`/`initialState` dictionaries replace. Omitted fields stay unchanged. Set optional fields to `null` to clear them. Changing initial state through the CLI does not implicitly overwrite saved state; set both explicitly when resetting a counter. IDs and widget kinds are immutable. Unknown fields are rejected. Dates use seconds since 2001-01-01 UTC, matching the workspace format.
-
-## Preview custom code
+## Preview a display function
 
 ```sh
 opendoc widget.preview --input - <<'JSON'
@@ -74,17 +105,18 @@ opendoc widget.preview --input - <<'JSON'
 JSON
 ```
 
-For a webpage preview, include `source: "webpage"`, `endpoint`, `selector`, and `renderScript` in `custom`. Preview may fetch the configured HTTPS URL and executes the script in the same isolated worker as the widget. It does not save configuration. The [USD/RUB example](USD-RUB.md) supplies a working source, selector, and display function.
+Preview returns the displayed value, detail, and optional progress. A webpage preview may fetch its URL, even with `--dry-run`. It never saves the widget. See [Widgets](../docs/Widgets.md) for script inputs and [USD/RUB](USD-RUB.md) for a webpage example.
 
-## Connection and concurrency
+## Rules for edits
 
-The running app serves a same-user Unix socket under `/tmp/opendoc-agent-UID/`. The directory has mode 0700, the socket 0600, and both client and server verify the peer's user ID. It opens no TCP port and exposes no shell execution operation. Requests run serially through the app's main-actor model; socket I/O stays off the UI thread. Closing the app stops the service. Test-mode app instances do not start it.
+- Pass the fields directly as JSON with `--input FILE` or `--input -`. Do not wrap them in `op` or `params`.
+- Objects merge. Arrays and the `state` and `initialState` dictionaries replace their previous values.
+- Omitted fields stay unchanged. `null` clears optional fields. IDs and widget kinds cannot change. Unknown fields are rejected.
+- To reset a counter through the CLI, set both `initialState` and `state`. Changing only the initial state leaves the current value alone.
+- Date fields use seconds since January 1, 2001 UTC.
 
-`ifRevision` hashes the current archive and visible dock IDs. A mismatch returns a conflict before applying a change. Read state and reapply your intended patch. A timed-out mutation can have succeeded, so inspect state before retrying. This is a local CLI protocol, not an MCP server. An MCP adapter can call these operations without changing the app's command handling.
+Successful responses contain `ok: true`, `result`, and `revision`. Errors contain `ok: false` and `error`, and exit with status 1.
 
-### Glass appearance
+For each edit, read state, inspect command help, validate with `--dry-run`, apply with `--if-revision`, and read state again. If the revision changed, inspect the new state before trying again. If a command timed out, it may already have applied. Check before repeating it.
 
-Use `dock.update` with `patch.appearance.glassStyle` set to `Clear` or `Regular`.
-`glassTint` adds a dark tint from `0` to `1`; `0` leaves Apple's material untinted.
-These settings apply to the shelf at rest and during magnification. They are also
-available under Appearance in Settings. macOS versions before 26 use a native blur fallback.
+Commands connect locally as your macOS user. Closing Open Doc stops the connection. Edit through this CLI rather than writing to the workspace file.
