@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.1.2
 
 - Reopen running applications through Launch Services so Finder can show a window after its last window was closed.
 - Detect New Window support from each application's scripting dictionary and show the action in dock and folder menus. Detection is cached until the dictionary changes. macOS asks for Automation permission on first use.
