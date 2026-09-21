@@ -95,9 +95,25 @@ final class NativeDockItemView: FlippedNativeView {
         needsLayout = true
     }
 
+    func detachFolderGlass() -> NSView? {
+        folderGlass?.removeFromSuperview()
+        return folderGlass
+    }
+
+    func restoreFolderGlass() {
+        guard let folderGlass else { return }
+        folderGlass.alphaValue = 1
+        folderGlass.isHidden = false
+        folderGlass.layer?.removeAllAnimations()
+        addSubview(folderGlass)
+        needsLayout = true
+        layoutSubtreeIfNeeded()
+    }
+
     override func layout() {
         super.layout()
         let side = min(iconSize, bounds.width - 2, bounds.height - 5)
+        guard folderGlass?.superview === self else { return }
         folderGlass?.frame = NSRect(x: (bounds.width - side) / 2, y: (bounds.height - 5 - side) / 2, width: side, height: side)
     }
 

@@ -12,7 +12,6 @@ final class NativeDockMagnification: NSWindowController, NSMenuDelegate {
     private var images: [CALayer] = []
     private var dots: [CALayer] = []
     private var folderGlass: [NSView?] = []
-    private var folderPreviews: [NSImageView?] = []
     private var hitRects: [NSRect] {
         images.indices.map { NativeDockWave.hitRect(artwork: visibleFrame(at: $0), tileWidth: widths[$0]) }
     }
@@ -87,24 +86,20 @@ final class NativeDockMagnification: NSWindowController, NSMenuDelegate {
                          y: screenRect.minY - frame.minY + (tile.bounds.height + 5 - side) / 2,
                          width: side, height: side))
             dotY.append(screenRect.minY - frame.minY)
-            // Glass owns its preview, just as in the resting tile. An empty
-            // material beneath a separate artwork layer can be culled by AppKit
-            // when this transparent child window becomes the visible dock.
-            let preview = tile.item.kind == .folder ? NSImageView(image: NativeApplications.icon(for: tile.item)) : nil
-            preview?.imageScaling = .scaleProportionallyUpOrDown
-            let glass = preview.map { DockGlassRoot.makeFolderMaterial(containing: $0) }
+            // Move the original glass and its content together. Keeping the
+            // existing native view preserves its compositor state and appearance.
+            let glass = tile.detachFolderGlass()
             if let glass {
                 glass.frame = baseRects.last!
                 surface.addSubview(glass, positioned: .above, relativeTo: artwork)
                 glass.layoutSubtreeIfNeeded()
             }
             folderGlass.append(glass)
-            folderPreviews.append(preview)
             let image = CALayer()
             image.contentsGravity = .resizeAspect
             image.contentsScale = panel.backingScaleFactor
             image.contents = Self.artwork(for: tile)
-            image.isHidden = preview != nil
+            image.isHidden = glass != nil
             artwork.layer?.addSublayer(image); images.append(image)
             let dot = CALayer(); dot.backgroundColor = NSColor.labelColor.withAlphaComponent(0.7).cgColor
             dot.cornerRadius = 1.5; dot.isHidden = !NativeApplications.isRunning(tile.item)
@@ -122,6 +117,7 @@ final class NativeDockMagnification: NSWindowController, NSMenuDelegate {
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
     override func close() {
+        tiles.forEach { $0.restoreFolderGlass() }
         if let window { dock?.window?.removeChildWindow(window) }
         super.close()
     }
@@ -136,7 +132,6 @@ final class NativeDockMagnification: NSWindowController, NSMenuDelegate {
         CATransaction.begin(); CATransaction.setDisableActions(true)
         for (index, tile) in tiles.enumerated() {
             images[index].contents = Self.artwork(for: tile)
-            folderPreviews[index]?.image = NativeApplications.icon(for: tile.item)
         }
         CATransaction.commit()
         refreshRunningIndicators()
@@ -155,7 +150,10 @@ final class NativeDockMagnification: NSWindowController, NSMenuDelegate {
         return restingBar.contains(local) || hitRects.contains { $0.contains(local) }
     }
     private func visibleFrame(at index: Int) -> NSRect {
-        images[index].presentation()?.frame ?? images[index].frame
+        if let glass = folderGlass[index] {
+            return glass.layer?.presentation()?.frame ?? glass.frame
+        }
+        return images[index].presentation()?.frame ?? images[index].frame
     }
     func updatePointerRouting(at screenPoint: NSPoint) {
         // An icon may finish animating beneath a stationary pointer. Routing
@@ -181,8 +179,7 @@ final class NativeDockMagnification: NSWindowController, NSMenuDelegate {
             let rect = frames[index]
             NativeDockWave.move(images[index], to: rect, duration: duration)
             if let glass = folderGlass[index] {
-                NativeDockWave.move(glass, to: rect, duration: duration)
-                glass.layoutSubtreeIfNeeded()
+                moveFolderGlass(glass, to: rect, duration: duration)
             }
             NativeDockWave.move(dots[index], to: NSRect(x: rect.midX - 1.5, y: dotY[index], width: 3, height: 3), duration: duration)
         }
@@ -199,6 +196,20 @@ final class NativeDockMagnification: NSWindowController, NSMenuDelegate {
         } else { hoverLabel.isHidden = true }
         CATransaction.commit()
     }
+    private func moveFolderGlass(_ glass: NSView, to frame: NSRect, duration: TimeInterval) {
+        // Let AppKit animate its effect view, including the internal glass mask.
+        // Animating only the backing layer's bounds leaves that mask stale.
+        if duration == 0 {
+            glass.layer?.removeAllAnimations()
+            glass.frame = frame
+            glass.layoutSubtreeIfNeeded()
+        } else {
+            NativeMotion.animate(duration, timingFunction: NativeDockWave.timingFunction) {
+                glass.animator().frame = frame
+            }
+        }
+    }
+
     func popoverAnchor(for itemID: UUID) -> (view: NSView, rect: NSRect)? {
         guard let index = tiles.firstIndex(where: { $0.item.id == itemID }) else { return nil }
         hoverLabel.isHidden = true
@@ -250,7 +261,7 @@ final class NativeDockMagnification: NSWindowController, NSMenuDelegate {
             // frame before applying the shared shrink, rather than at the target.
             let frame = visibleFrame(at: index)
             NativeDockWave.move(layer, to: frame, duration: 0)
-            if let glass = folderGlass[index] { NativeDockWave.move(glass, to: frame, duration: 0) }
+            if let glass = folderGlass[index] { moveFolderGlass(glass, to: frame, duration: 0) }
         }
         let scale: CGFloat = pressed ? (tiles[index].item.kind == .widget ? 0.985 : 0.9) : 1
         let transform = NativeMotion.reducesMotion ? CATransform3DIdentity : CATransform3DMakeScale(scale, scale, 1)
@@ -266,7 +277,7 @@ final class NativeDockMagnification: NSWindowController, NSMenuDelegate {
             let frame = CGRect(x: layer.position.x - size.width * visualScale / 2,
                                y: layer.position.y - size.height * visualScale / 2,
                                width: size.width * visualScale, height: size.height * visualScale)
-            NativeDockWave.move(glass, to: frame, duration: duration)
+            moveFolderGlass(glass, to: frame, duration: duration)
             glass.alphaValue = pressed ? 0.72 : 1
         }
         layer.transform = transform

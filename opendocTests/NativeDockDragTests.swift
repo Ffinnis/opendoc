@@ -28,6 +28,11 @@ final class NativeDockDragTests: XCTestCase {
         defer { controller.close() }
         controller.showWindow(nil)
         XCTAssertEqual(controller.window?.allowsToolTipsWhenApplicationIsInactive, true)
+        func findFolderGlass(_ view: NSView) -> NSView? {
+            if #available(macOS 26.0, *), let glass = view as? NSGlassEffectView, glass.contentView is NSImageView { return glass }
+            return view.subviews.compactMap { findFolderGlass($0) }.first
+        }
+        let restingGlass = controller.window?.contentView.flatMap { findFolderGlass($0) }
         controller.previewMagnification()
         let overlay = try XCTUnwrap(controller.window?.childWindows?.first, "Reduce Motion: \(NativeMotion.reducesMotion), screens: \(NSScreen.screens.map(\.frame)), dock: \(String(describing: controller.window?.frame))")
         XCTAssertTrue(overlay.allowsToolTipsWhenApplicationIsInactive)
@@ -40,6 +45,7 @@ final class NativeDockDragTests: XCTestCase {
         let oldContents = try XCTUnwrap(image.contents) as AnyObject
         if #available(macOS 26.0, *) {
             let glass = try XCTUnwrap(overlay.contentView?.subviews.compactMap { $0 as? NSGlassEffectView }.first { $0.contentView is NSImageView })
+            XCTAssertTrue(glass === restingGlass, "Hover must retain the original material view")
             XCTAssertNotNil((glass.contentView as? NSImageView)?.image)
             XCTAssertEqual(glass.frame, image.frame)
             XCTAssertFalse(glass.isHidden)
@@ -65,6 +71,9 @@ final class NativeDockDragTests: XCTestCase {
         XCTAssertFalse(overlay.childWindows?.isEmpty ?? true)
         XCTAssertFalse(oldContents === image.contents as AnyObject)
         XCTAssertTrue(dot.isHidden)
+        controller.endMagnification()
+        XCTAssertTrue(restingGlass?.superview is NativeDockItemView)
+        XCTAssertFalse(restingGlass?.isHidden ?? true)
     }
 
     func testFolderRunningIndicatorIncludesItsApplications() throws {
