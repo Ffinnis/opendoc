@@ -17,39 +17,61 @@ xcodebuild -resolvePackageDependencies -project opendoc.xcodeproj -scheme opendo
   -clonedSourcePackagesDirPath build/SourcePackages
 ```
 
-## Prepare a version
+## Queue a version
 
 1. Update `MARKETING_VERSION` and increase `CURRENT_PROJECT_VERSION` in all project configurations.
 2. Update [CHANGELOG.md](../CHANGELOG.md), run the checks in [Contributing](../CONTRIBUTING.md#check-your-change), commit, and push.
 3. Run the following command with the new version:
 
 ```sh
-python3 Scripts/release.py prepare 1.2.0
+python3 Scripts/release.py enqueue 1.2.0
 ```
 
-The checkout must be clean. The script saves the source commit and build number, builds a universal Mac archive, and submits it to Apple. Keep `build/releases/1.2.0` until publication finishes.
+The checkout must be clean for a new build. The command saves the source commit and build number, builds a universal Mac archive, and submits it to Apple. It creates a GitHub draft and queues publication, then returns without waiting for notarization. Keep `build/releases/1.2.0` until publication finishes.
 
-## Publish after notarization
+If this version already has an archive from `prepare`, `enqueue` uses it without rebuilding or resubmitting. Edits made since that archive was created are not part of the release.
+
+For custom release notes, write `build/releases/1.2.0/notes.md` after `prepare` and before `enqueue`, or edit the GitHub draft. Otherwise GitHub generates the notes.
+
+## Background publication
+
+The release Mac runs a single queue check with:
 
 ```sh
-python3 Scripts/release.py publish 1.2.0
+python3 Scripts/release.py drain
 ```
 
-If Apple is still processing, keep the archive and retry this command later. Do not run `prepare` again to check status. If Apple rejects the app, resolve the rejection before publishing.
+Each check waits for successful CI on the archived commit and asks Xcode whether notarization has finished. Pending releases stay queued. Approved builds pass signature and notarization checks before the script creates the ZIP, signs the update feed, uploads both files, and publishes the draft.
 
-Once notarization passes, the script verifies the app, signs the ZIP and update feed, uploads them to a draft, and publishes the release. The tag points to the source commit recorded during preparation.
+A Codex background task on the maintainer's Mac runs this command every 15 minutes. That task is a local setup, not part of the repository. The Mac and Codex must be running, with Xcode signed in, `gh` authenticated, and the signing key available in Keychain. A Keychain permission prompt may need attention. GitHub Actions does not build or sign these releases.
+
+On another release Mac, arrange recurring execution of `drain` with your preferred scheduler. Checks do not sleep or poll in a loop, and a file lock prevents overlapping release commands.
+
+Inspect the queue at any time:
+
+```sh
+python3 Scripts/release.py status
+```
 
 Check the release notes for clear descriptions of user-visible changes. Then check the **Deploy updates** workflow. A release page alone does not confirm that automatic updates are available. The workflow must validate the files and finish deploying the feed. Prereleases stay out of the stable feed.
 
-## Recover an interrupted publication
+## Retry or cancel
 
-If a draft for that version already exists, inspect it before continuing. The script does not resume an existing draft automatically. Confirm its source commit, upload the verified ZIP and signed `appcast.xml` if missing, and validate the local assets before publishing the draft:
+CI failures, rejected exports, signature errors, and command timeouts mark the queued version as `failed`. Background checks leave it alone until you resolve the problem and requeue it:
 
 ```sh
-python3 Scripts/validate-release.py build/releases/1.2.0/assets v1.2.0
+python3 Scripts/release.py enqueue 1.2.0
 ```
 
-Do not publish an empty draft or an app still waiting for notarization. Do not overwrite a published version. Corrections need a new release with a higher build number.
+Publication can resume an existing draft only when its source commit and tag match the archive. A partial asset upload is replaced after local validation. Published assets are never overwritten. Older queued versions stop if a newer stable version is already public.
+
+To remove a version from the queue while retaining its archive and GitHub draft:
+
+```sh
+python3 Scripts/release.py cancel 1.2.0
+```
+
+Manual `prepare VERSION` and `publish VERSION` commands are still available. `prepare` only builds and submits; `publish` performs one publication attempt. Neither command schedules background checks. Do not repeat `prepare` to check Apple's progress, publish an empty draft, or overwrite a public version. Code changes need a new archive and version.
 
 ## First release and forks
 
