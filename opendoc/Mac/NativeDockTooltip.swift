@@ -14,7 +14,7 @@ final class NativeDockTooltip: NSVisualEffectView {
         return NSSize(width: min(280, max(44, natural.width + 22)), height: natural.height + 12)
     }
     override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
+        super.init(frame: frameRect == .zero ? NSRect(x: 0, y: 0, width: 44, height: 28) : frameRect)
         material = .toolTip
         blendingMode = .behindWindow
         state = .active

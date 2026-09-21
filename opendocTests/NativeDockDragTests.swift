@@ -28,39 +28,32 @@ final class NativeDockDragTests: XCTestCase {
         defer { controller.close() }
         controller.showWindow(nil)
         XCTAssertEqual(controller.window?.allowsToolTipsWhenApplicationIsInactive, true)
-        func findFolderGlass(_ view: NSView) -> NSView? {
-            if #available(macOS 26.0, *), let glass = view as? NSGlassEffectView, glass.contentView is NSImageView { return glass }
-            return view.subviews.compactMap { findFolderGlass($0) }.first
+        let root = try XCTUnwrap(controller.window?.contentView)
+        func tiles(in view: NSView) -> [NativeDockItemView] {
+            if let tile = view as? NativeDockItemView { return [tile] }
+            return view.subviews.flatMap { tiles(in: $0) }
         }
-        let restingGlass = controller.window?.contentView.flatMap { findFolderGlass($0) }
+        let tile = try XCTUnwrap(tiles(in: root).first { $0.item.id == folder.id })
+        let glass = tile.animationView
+        let originalParent = glass.superview
+        let originalFrame = glass.frame
+        let shelfSize = root.bounds.size
+        func image(in view: NSView) -> NSImageView? {
+            (view as? NSImageView) ?? view.subviews.compactMap { image(in: $0) }.first
+        }
+        let preview = try XCTUnwrap(image(in: glass))
+        let oldImage = preview.image
         controller.previewMagnification()
-        let overlay = try XCTUnwrap(controller.window?.childWindows?.first, "Reduce Motion: \(NativeMotion.reducesMotion), screens: \(NSScreen.screens.map(\.frame)), dock: \(String(describing: controller.window?.frame))")
-        XCTAssertTrue(overlay.allowsToolTipsWhenApplicationIsInactive)
-        let shelf = try XCTUnwrap(overlay.contentView?.subviews.first)
-        XCTAssertEqual(shelf.frame.size, controller.window?.frame.size)
-        XCTAssertEqual(controller.window?.contentView?.bounds.size, controller.window?.frame.size)
-        let artwork = try XCTUnwrap(overlay.contentView?.subviews.first { ($0.layer?.sublayers?.count ?? 0) >= 2 })
-        let image = try XCTUnwrap(artwork.layer?.sublayers?.first)
-        let dot = try XCTUnwrap(artwork.layer?.sublayers?.dropFirst().first)
-        let oldContents = try XCTUnwrap(image.contents) as AnyObject
-        if #available(macOS 26.0, *) {
-            let glass = try XCTUnwrap(overlay.contentView?.subviews.compactMap { $0 as? NSGlassEffectView }.first { $0.contentView is NSImageView })
-            XCTAssertTrue(glass === restingGlass, "Hover must retain the original material view")
-            XCTAssertNotNil((glass.contentView as? NSImageView)?.image)
-            XCTAssertFalse(glass.isHidden)
-            XCTAssertEqual(glass.alphaValue, 1)
-            XCTAssertTrue(image.isHidden, "The preview belongs inside native glass, without a duplicate layer above it")
-        }
-        XCTAssertFalse(dot.isHidden)
+        let overlay = try XCTUnwrap(controller.window?.childWindows?.first)
         let magnifier = try XCTUnwrap(overlay.windowController as? NativeDockMagnification)
-        let visible = image.presentation()?.frame ?? image.frame
-        magnifier.update(at: overlay.convertPoint(toScreen: NSPoint(x: visible.midX, y: visible.midY)), animated: false)
-        if let restingGlass {
-            XCTAssertEqual(restingGlass.frame.minX, image.frame.minX, accuracy: 0.01)
-            XCTAssertEqual(restingGlass.frame.minY, image.frame.minY, accuracy: 0.01)
-            XCTAssertEqual(restingGlass.frame.width, image.frame.width, accuracy: 0.01)
-            XCTAssertEqual(restingGlass.frame.height, image.frame.height, accuracy: 0.01)
-        }
+        XCTAssertTrue(root.window === overlay)
+        XCTAssertTrue(glass.superview === originalParent, "The folder must stay embedded in its original tile and shelf")
+        XCTAssertEqual(root.bounds.size, shelfSize)
+        XCTAssertEqual(glass.alphaValue, 1)
+        XCTAssertFalse(glass.isHidden)
+        let anchor = try XCTUnwrap(magnifier.popoverAnchor(for: folder.id))
+        let point = overlay.convertPoint(toScreen: NSPoint(x: anchor.rect.midX, y: anchor.rect.midY))
+        magnifier.update(at: point, animated: false)
         let label = try XCTUnwrap(overlay.contentView?.subviews.compactMap { $0 as? NativeDockTooltip }.first)
         XCTAssertFalse(label.isHidden)
         XCTAssertEqual(label.title, folder.title)
@@ -74,11 +67,58 @@ final class NativeDockDragTests: XCTestCase {
         controller.reload()
         XCTAssertTrue(overlay.isVisible)
         XCTAssertFalse(overlay.childWindows?.isEmpty ?? true)
-        XCTAssertFalse(oldContents === image.contents as AnyObject)
-        XCTAssertTrue(dot.isHidden)
+        XCTAssertFalse(oldImage === preview.image)
         controller.endMagnification()
-        XCTAssertTrue(restingGlass?.superview is NativeDockItemView)
-        XCTAssertFalse(restingGlass?.isHidden ?? true)
+        XCTAssertTrue(controller.window?.contentView === root)
+        XCTAssertTrue(glass.superview === originalParent)
+        XCTAssertEqual(glass.frame, originalFrame)
+        XCTAssertEqual(root.bounds.size, shelfSize)
+    }
+
+    func testHoverExitKeepsOriginalViewsAndRestoresGeometry() throws {
+        try XCTSkipIf(NativeMotion.reducesMotion, "Magnification is disabled by Reduce Motion.")
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".json")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let store = DockStore(fileURL: url)
+        let app = NativeApplications.item(for: Bundle.main.bundleURL)
+        var folder = DockItem(kind: .folder, title: "Tools", symbol: "folder")
+        folder.children = [app]
+        var profile = DockProfile(name: "Hover", symbol: "folder", color: "green", items: [folder, .widget(.clock)])
+        profile.appearance.autoHide = false
+        try store.create(profile)
+        let application = MacApplication()
+        let controller = NativeDockController(profileID: profile.id, store: store, application: application)
+        defer { controller.close() }
+        let root = try XCTUnwrap(controller.window?.contentView)
+        root.layoutSubtreeIfNeeded()
+        func tiles(in view: NSView) -> [NativeDockItemView] {
+            if let tile = view as? NativeDockItemView { return [tile] }
+            return view.subviews.flatMap { tiles(in: $0) }
+        }
+        let views = tiles(in: root)
+        let originalFrames = views.map { $0.animationView.frame }
+        let originalParents = views.map { $0.animationView.superview }
+        for _ in 0..<3 {
+            controller.previewMagnification()
+            let overlay = try XCTUnwrap(controller.window?.childWindows?.first)
+            let magnifier = try XCTUnwrap(overlay.windowController as? NativeDockMagnification)
+            let anchor = try XCTUnwrap(magnifier.popoverAnchor(for: folder.id))
+            let point = overlay.convertPoint(toScreen: NSPoint(x: anchor.rect.midX, y: anchor.rect.midY))
+            magnifier.update(at: point)
+            RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+            magnifier.update(at: point, magnified: false)
+            RunLoop.main.run(until: Date().addingTimeInterval(0.2))
+            for (index, tile) in views.enumerated() {
+                XCTAssertTrue(tile.animationView.superview === originalParents[index])
+                XCTAssertEqual(tile.animationView.frame.minX, originalFrames[index].minX, accuracy: 0.5)
+                XCTAssertEqual(tile.animationView.frame.minY, originalFrames[index].minY, accuracy: 0.5)
+                XCTAssertEqual(tile.animationView.frame.width, originalFrames[index].width, accuracy: 0.5)
+                XCTAssertEqual(tile.animationView.alphaValue, 1)
+            }
+            controller.endMagnification()
+            XCTAssertTrue(controller.window?.contentView === root)
+            XCTAssertEqual(views.map { $0.animationView.frame }, originalFrames)
+        }
     }
 
     func testFolderRunningIndicatorIncludesItsApplications() throws {
@@ -144,6 +184,9 @@ final class NativeDockDragTests: XCTestCase {
         controller.previewMagnification()
         let overlay = try XCTUnwrap(panel.childWindows?.first, "Reduce Motion: \(NativeMotion.reducesMotion), screens: \(NSScreen.screens.map(\.frame)), dock: \(panel.frame)")
         controller.beginDrag(source)
+        XCTAssertTrue(panel.contentView === root)
+        XCTAssertTrue(source.animationView.superview === source)
+        XCTAssertFalse(source.animationView.isHidden)
         controller.reload() // A concurrent workspace notification must not end the drag.
         controller.updatePointer()
         RunLoop.main.run(until: Date().addingTimeInterval(0.25))

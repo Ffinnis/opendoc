@@ -4,7 +4,7 @@ import IOKit.ps
 import QuartzCore
 
 final class NativeDockItemView: FlippedNativeView {
-    var item: DockItem { didSet { running = NativeApplications.isRunning(item); if item.kind == .folder { icon = NativeApplications.icon(for: item) }; toolTip = item.title; setAccessibilityLabel(item.title); cachedArtwork = nil; updateFolderGlass(); lastRefreshBucket = nil; refreshIfNeeded(at: Date()); needsDisplay = true } }
+    var item: DockItem { didSet { running = NativeApplications.isRunning(item); if item.kind == .folder { icon = NativeApplications.icon(for: item) }; toolTip = item.title; setAccessibilityLabel(item.title); updateFolderGlass(); lastRefreshBucket = nil; refreshIfNeeded(at: Date()); needsDisplay = true } }
     let iconSize: CGFloat
     let vertical: Bool
     weak var controller: NativeDockController?
@@ -14,13 +14,15 @@ final class NativeDockItemView: FlippedNativeView {
     private var lastRefreshBucket: Int?
     private var dataReading = NativeWidgetData.Reading(value: "…", detail: "Loading…")
     private var customReading = NativeCustomWidgetData.Reading()
-    private var cachedArtwork: CGImage?
     private var dropAfter: Bool? { didSet { needsDisplay = true } }
     private var dragging = false
     private var dragStart = NSPoint.zero
     private var tracking: NSTrackingArea?
     private var icon: NSImage
     private var folderGlass: NSView?
+    private let applicationArtwork = NSImageView()
+    var animatesArtwork = false
+    var animationView: NSView { folderGlass ?? (item.kind == .widget || item.kind == .spacer ? self : applicationArtwork) }
     private let folderPreview = NSImageView()
     private var grouping = false { didSet { needsDisplay = true } }
 
@@ -33,6 +35,9 @@ final class NativeDockItemView: FlippedNativeView {
         super.init(frame: .zero)
         toolTip = item.title
         wantsLayer = true
+        applicationArtwork.imageScaling = .scaleProportionallyUpOrDown
+        applicationArtwork.wantsLayer = true
+        addSubview(applicationArtwork)
         updateFolderGlass()
         refreshIfNeeded(at: Date())
         setAccessibilityElement(item.kind != .spacer)
@@ -67,11 +72,6 @@ final class NativeDockItemView: FlippedNativeView {
         if item.kind == .widget {
             drawWidget()
         } else {
-            let side = min(iconSize, bounds.width - 2, bounds.height - 5)
-            let rect = NSRect(x: (bounds.width - side) / 2, y: (bounds.height - 5 - side) / 2, width: side, height: side)
-            if item.kind != .folder {
-                icon.draw(in: rect, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: [.interpolation: NSImageInterpolation.high])
-            }
             if running {
                 NSColor.labelColor.withAlphaComponent(0.7).setFill()
                 NSBezierPath(ovalIn: NSRect(x: bounds.midX - 1.5, y: bounds.maxY - 3, width: 3, height: 3)).fill()
@@ -80,9 +80,18 @@ final class NativeDockItemView: FlippedNativeView {
     }
 
     private func updateFolderGlass() {
+        applicationArtwork.image = icon
+        applicationArtwork.isHidden = [.folder, .widget, .spacer].contains(item.kind)
         if item.kind == .folder {
             if folderGlass == nil {
                 folderPreview.imageScaling = .scaleProportionallyUpOrDown
+                // Keep the existing glass tile distinguishable when both native
+                // materials adapt to a dark desktop. The contour is content, so
+                // the glass compositor cannot blend it into the shelf.
+                folderPreview.wantsLayer = true
+                folderPreview.layer?.cornerRadius = 13
+                folderPreview.layer?.borderWidth = 1
+                folderPreview.layer?.borderColor = NSColor.white.withAlphaComponent(0.2).cgColor
                 let glass = DockGlassRoot.makeFolderMaterial(containing: folderPreview)
                 addSubview(glass)
                 folderGlass = glass
@@ -95,26 +104,28 @@ final class NativeDockItemView: FlippedNativeView {
         needsLayout = true
     }
 
-    func detachFolderGlass() -> NSView? {
-        folderGlass?.removeFromSuperview()
-        return folderGlass
-    }
-
-    func restoreFolderGlass() {
-        guard let folderGlass else { return }
-        folderGlass.alphaValue = 1
-        folderGlass.isHidden = false
-        folderGlass.layer?.removeAllAnimations()
-        addSubview(folderGlass)
+    func resetArtwork() {
+        animatesArtwork = false
+        animationView.layer?.removeAllAnimations()
+        animationView.alphaValue = 1
         needsLayout = true
         layoutSubtreeIfNeeded()
     }
 
+    func refreshRunningIndicator() {
+        let value = NativeApplications.isRunning(item)
+        guard value != running else { return }
+        running = value
+        needsDisplay = true
+    }
+
     override func layout() {
         super.layout()
+        guard !animatesArtwork else { return }
         let side = min(iconSize, bounds.width - 2, bounds.height - 5)
-        guard folderGlass?.superview === self else { return }
-        folderGlass?.frame = NSRect(x: (bounds.width - side) / 2, y: (bounds.height - 5 - side) / 2, width: side, height: side)
+        let rect = NSRect(x: (bounds.width - side) / 2, y: (bounds.height - 5 - side) / 2, width: side, height: side)
+        applicationArtwork.frame = rect
+        folderGlass?.frame = rect
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
@@ -232,26 +243,11 @@ final class NativeDockItemView: FlippedNativeView {
             guard reading != customReading else { return }
             customReading = reading
         }
-        cachedArtwork = nil
         needsDisplay = true
-    }
-
-    func snapshotArtwork() -> CGImage? {
-        if let cachedArtwork { return cachedArtwork }
-        guard let bitmap = bitmapImageRepForCachingDisplay(in: bounds) else { return nil }
-        let opacity = alphaValue
-        CATransaction.begin(); CATransaction.setDisableActions(true)
-        alphaValue = 1
-        cacheDisplay(in: bounds, to: bitmap)
-        alphaValue = opacity
-        CATransaction.commit()
-        cachedArtwork = bitmap.cgImage
-        return cachedArtwork
     }
 
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
-        cachedArtwork = nil
         needsDisplay = true
     }
 

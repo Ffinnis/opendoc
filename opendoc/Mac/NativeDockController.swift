@@ -86,7 +86,6 @@ final class NativeDockController: NSWindowController, NSMenuDelegate {
                 guard let self, !self.hidden, self.window?.isVisible == true else { return }
                 let now = Date()
                 self.itemViews.forEach { $0.refreshIfNeeded(at: now) }
-                self.magnification?.refreshWidgets()
             }
         }
     }
@@ -331,7 +330,7 @@ final class NativeDockController: NSWindowController, NSMenuDelegate {
     private func installMagnification() {
         // Overflow docks retain their scrollable row; a partial widget must not
         // be snapshotted outside the viewport into the magnification window.
-        guard contentSize.width <= visibleFrame.width, let settingsButton, let panel = window else { return }
+        guard contentSize.width <= visibleFrame.width, settingsButton != nil, let panel = window else { return }
         // During an animated resize, visibleFrame is the destination while the
         // panel still has its previous size. Do not replace it with a larger or
         // smaller shelf on first hover. The pointer timer retries once settled.
@@ -341,12 +340,10 @@ final class NativeDockController: NSWindowController, NSMenuDelegate {
             return
         }
         root.layoutSubtreeIfNeeded()
-        let overlay = NativeDockMagnification(dock: self, tiles: itemViews, settings: settingsButton, bar: panel.frame)
+        let overlay = NativeDockMagnification(dock: self, tiles: itemViews, root: root, bar: panel.frame)
         // A failed overlay must never leave an empty glass bar behind.
         guard overlay.hasVisibleContent else { overlay.close(); return }
         magnification = overlay
-        itemViews.forEach { $0.alphaValue = 0 }
-        root.alphaValue = 0
     }
 
     func endMagnification() {

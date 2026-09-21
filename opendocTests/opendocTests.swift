@@ -372,21 +372,6 @@ final class opendocTests: XCTestCase {
         XCTAssertEqual(previous, base[3].width * 1.5, accuracy: 0.0001)
     }
 
-    func testMagnificationAnimatesBeforeFirstDisplayCommit() throws {
-        let layer = CALayer()
-        let resting = CGRect(x: 40, y: 8, width: 44, height: 44)
-        layer.frame = resting
-        NativeDockWave.move(layer, to: CGRect(x: 29, y: 8, width: 66, height: 66), duration: NativeDockWave.entryDuration)
-        let animation = try XCTUnwrap(layer.animation(forKey: "waveBounds") as? CABasicAnimation)
-        XCTAssertEqual((animation.fromValue as? NSValue)?.rectValue.size, resting.size)
-        XCTAssertEqual(animation.duration, 0.16)
-        NativeDockWave.move(layer, to: CGRect(x: 30, y: 8, width: 64, height: 64), duration: 0.20)
-        let retargeted = try XCTUnwrap(layer.animation(forKey: "waveBounds") as? CABasicAnimation)
-        XCTAssertEqual((retargeted.fromValue as? NSValue)?.rectValue.size, resting.size)
-        NativeDockWave.move(layer, to: resting, duration: 0)
-        XCTAssertTrue(layer.animationKeys()?.isEmpty ?? true)
-    }
-
     func testReducedMotionOpensWidgetOnRestingDock() throws {
         try XCTSkipUnless(NativeMotion.reducesMotion, "Runs with Reduce Motion enabled.")
         let store = makeStore()

@@ -65,48 +65,6 @@ enum NativeDockWave {
         return CGRect(x: artwork.midX - width / 2, y: 0, width: width, height: artwork.maxY + 3)
     }
 
-    /// Explicit animations also work on the first frame of a newly attached layer.
-    /// Retarget from presentation values so rapid pointer movement cannot jump.
     static var timingFunction: CAMediaTimingFunction { CAMediaTimingFunction(controlPoints: 0.22, 0.65, 0.3, 1) }
-
-    static func move(_ layer: CALayer, to frame: CGRect, duration: TimeInterval) {
-        move(layer, to: frame, duration: duration) { layer.frame = $0 }
-    }
-
-    /// Capture the displayed geometry before AppKit updates the material's model
-    /// frame. Glass and artwork then share the same explicit animation transaction.
-    static func move(_ view: NSView, to frame: CGRect, duration: TimeInterval) {
-        view.wantsLayer = true
-        guard let layer = view.layer else { return }
-        move(layer, to: frame, duration: duration) { view.frame = $0 }
-    }
-
-    private static func move(_ layer: CALayer, to frame: CGRect, duration: TimeInterval,
-                             updateFrame: (CGRect) -> Void) {
-        guard layer.frame != frame || duration == 0 else { return }
-        let presentation = layer.presentation()
-        let fromPosition = presentation?.position
-            ?? (layer.animation(forKey: "wavePosition") as? CABasicAnimation)?.fromValue as? CGPoint
-            ?? layer.position
-        let fromBounds = presentation?.bounds
-            ?? (layer.animation(forKey: "waveBounds") as? CABasicAnimation)?.fromValue as? CGRect
-            ?? layer.bounds
-        CATransaction.begin(); CATransaction.setDisableActions(true)
-        updateFrame(frame)
-        if duration > 0 {
-            for (key, from, to) in [("position", NSValue(point: fromPosition), NSValue(point: layer.position)),
-                                    ("bounds", NSValue(rect: fromBounds), NSValue(rect: layer.bounds))] {
-                let animation = CABasicAnimation(keyPath: key)
-                animation.fromValue = from; animation.toValue = to
-                animation.duration = duration
-                animation.timingFunction = timingFunction
-                layer.add(animation, forKey: key == "position" ? "wavePosition" : "waveBounds")
-            }
-        } else {
-            layer.removeAnimation(forKey: "wavePosition")
-            layer.removeAnimation(forKey: "waveBounds")
-        }
-        CATransaction.commit()
-    }
 }
 #endif
