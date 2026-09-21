@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Bring an app's windows forward together when clicked in the dock or a folder, including windows on another display.
+
 ## 1.1.2
 
 - Reopen running applications through Launch Services so Finder can show a window after its last window was closed.

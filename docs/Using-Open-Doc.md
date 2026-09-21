@@ -18,7 +18,7 @@ A folder shows one dot for each running app inside it. Apps in that folder no lo
 
 ## Open apps and windows
 
-Click an app to launch it or ask it to reopen its windows. This also lets Finder show a window after you close its last one.
+Click an app to launch it or bring its windows forward, including windows on another display. The click also asks the app to reopen, so Finder can show a window after you close its last one.
 
 Right-click an app in the dock or a folder for **New Window**. The option appears when the app declares a supported command. Some apps do not expose one. macOS may ask you to let Open Doc control that app the first time you use the command. If permission was denied, review it in **System Settings > Privacy & Security > Automation**.
 

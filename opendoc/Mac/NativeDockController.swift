@@ -482,10 +482,16 @@ final class NativeDockController: NSWindowController, NSMenuDelegate {
             guard let address = item.url, let url = URL(string: address) else { return }
             // Launch Services sends the normal reopen request to a running app.
             // Activating its process alone leaves Finder with no window to show.
-            NSWorkspace.shared.openApplication(at: url, configuration: .init()) { _, error in
-                if let error { Task { @MainActor in
-                    (NSApplication.shared.delegate as? MacApplication)?.report(error.localizedDescription)
-                } }
+            NSWorkspace.shared.openApplication(at: url, configuration: .init()) { app, error in
+                Task { @MainActor in
+                    if let error {
+                        (NSApplication.shared.delegate as? MacApplication)?.report(error.localizedDescription)
+                        return
+                    }
+                    // A dock click should also bring forward this app's windows
+                    // on other displays, not just its last key window.
+                    app?.activate(options: .activateAllWindows)
+                }
             }
         case .link:
             if let address = item.url, let url = DockArchive.allowedURL(address), !NSWorkspace.shared.open(url) { application?.report("No application could open this link.") }
