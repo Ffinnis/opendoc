@@ -1,0 +1,18 @@
+.DS_Store
+DerivedData/
+build/
+*.xcresult
+xcuserdata/
+*.xcuserstate
+*.profraw
+*.profdata
+
+# Local Apple signing configuration and private signing assets
+Configuration/LocalSigning.xcconfig
+*.p12
+*.p8
+*.mobileprovision
+*.provisionprofile
+
+__pycache__/
+*.pyc

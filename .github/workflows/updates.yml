@@ -1,0 +1,54 @@
+name: Deploy updates
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: update-feed
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    if: github.event_name == 'workflow_dispatch' || (!github.event.release.prerelease && !github.event.release.draft)
+    runs-on: macos-26
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Download and validate the latest stable release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p build/feed build/release
+          tag=$(gh release list --repo Ffinnis/opendoc --exclude-drafts --exclude-pre-releases --limit 1 --json tagName --jq '.[0].tagName // empty')
+          if [ -z "$tag" ]; then
+            python3 Scripts/validate-release.py --feed Updates/appcast.xml
+            cp Updates/appcast.xml build/feed/appcast.xml
+          else
+            tag=$(gh api repos/Ffinnis/opendoc/releases/latest --jq .tag_name)
+            gh release download "$tag" --repo Ffinnis/opendoc --pattern appcast.xml --pattern 'OpenDoc-*.zip' --dir build/release
+            python3 Scripts/validate-release.py build/release "$tag"
+            cp build/release/appcast.xml build/feed/appcast.xml
+          fi
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: build/feed
+  deploy:
+    needs: validate
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/deploy-pages@v4
+        id: deployment

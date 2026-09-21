@@ -1,43 +1,55 @@
-//
-//  opendocUITests.swift
-//  opendocUITests
-//
-//  Created by Roman on 19.09.2026.
-//
-
 import XCTest
 
+#if !os(macOS)
 final class opendocUITests: XCTestCase {
-
-    override func setUpWithError() throws {
-        // Put setup code here. This method is called before the invocation of each test method in the class.
-
-        // In UI tests it is usually best to stop immediately when a failure occurs.
-        continueAfterFailure = false
-
-        // In UI tests it’s important to set the initial state - such as interface orientation - required for your tests before they run. The setUp method is a good place to do this.
-    }
-
-    override func tearDownWithError() throws {
-        // Put teardown code here. This method is called after the invocation of each test method in the class.
-    }
+    override func setUpWithError() throws { continueAfterFailure = false }
 
     @MainActor
-    func testExample() throws {
-        // UI tests must launch the application that they test.
+    func testCreateDockAddWidgetAndPersistNote() {
         let app = XCUIApplication()
+        app.launchArguments = ["--ui-testing", UUID().uuidString]
         app.launch()
-
-        // Use XCTAssert and related functions to verify your tests produce the correct results.
-        // XCUIAutomation Documentation
-        // https://developer.apple.com/documentation/xcuiautomation
+        app.buttons["new-dock"].tap()
+        let field = app.alerts.textFields.firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 3))
+        field.typeText("Writing")
+        app.alerts.buttons["Save"].tap()
+        XCTAssertTrue(app.buttons["profile-Writing"].waitForExistence(timeout: 3))
+        app.buttons["nav-Widget library"].tap()
+        app.buttons["add-widget-note"].tap()
+        app.buttons["nav-My docks"].tap()
+        let openNote = app.buttons["Open Sticky note"].firstMatch
+        XCTAssertTrue(openNote.waitForExistence(timeout: 3))
+        openNote.tap()
+        let note = app.textViews["Note text"]
+        XCTAssertTrue(note.waitForExistence(timeout: 3))
+        note.tap()
+        note.typeText(" Saved from UI test")
+        app.buttons["Save note"].tap()
+        app.buttons["Done"].tap()
+        app.terminate()
+        app.launch()
+        XCTAssertTrue(app.buttons["profile-Writing"].waitForExistence(timeout: 5))
+        app.buttons["Open Sticky note"].firstMatch.tap()
+        XCTAssertTrue((app.textViews["Note text"].value as? String ?? "").contains("Saved from UI test"))
     }
 
     @MainActor
-    func testLaunchPerformance() throws {
-        // This measures how long it takes to launch your application.
-        measure(metrics: [XCTApplicationLaunchMetric()]) {
-            XCUIApplication().launch()
-        }
+    func testAppearanceAndProfileSwitching() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-testing", UUID().uuidString]
+        app.launch()
+        app.buttons["nav-Appearance"].tap()
+        app.segmentedControls["Wallpaper"].buttons["Ocean"].tap()
+        app.segmentedControls["Position"].buttons["Left"].tap()
+        XCTAssertTrue(app.segmentedControls["Position"].buttons["Left"].isSelected)
+        app.buttons["profile-Personal"].tap()
+        app.buttons["nav-Appearance"].tap()
+        XCTAssertTrue(app.segmentedControls["Position"].buttons["Bottom"].isSelected)
+        app.buttons["profile-Everyday"].tap()
+        app.buttons["nav-Appearance"].tap()
+        XCTAssertTrue(app.segmentedControls["Position"].buttons["Left"].isSelected)
     }
 }
+
+#endif

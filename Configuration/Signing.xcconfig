@@ -1,0 +1,2 @@
+// Personal signing settings stay on this Mac. See CONTRIBUTING.md.
+#include? "LocalSigning.xcconfig"

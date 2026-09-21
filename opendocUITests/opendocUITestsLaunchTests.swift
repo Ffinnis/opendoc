@@ -20,6 +20,7 @@ final class opendocUITestsLaunchTests: XCTestCase {
     @MainActor
     func testLaunch() throws {
         let app = XCUIApplication()
+        app.launchArguments = ["--ui-testing", UUID().uuidString]
         app.launch()
 
         // Insert steps here to perform after app launch but before taking a screenshot,

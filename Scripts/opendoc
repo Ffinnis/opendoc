@@ -1,0 +1,9 @@
+#!/bin/sh
+set -eu
+app="${OPENDOC_APP:-/tmp/opendoc-release/Build/Products/Release/opendoc.app}"
+binary="$app/Contents/MacOS/opendoc"
+if [ ! -x "$binary" ]; then
+    printf '%s\n' 'Open Doc executable not found. Set OPENDOC_APP to your built .app bundle.' >&2
+    exit 1
+fi
+exec "$binary" --cli "$@"
