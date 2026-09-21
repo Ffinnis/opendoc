@@ -409,7 +409,7 @@ final class NativeDockController: NSWindowController, NSMenuDelegate {
         }
         if let url = item.applicationURL,
            let running = NSWorkspace.shared.runningApplications.first(where: {
-               $0.bundleURL?.standardizedFileURL.resolvingSymlinksInPath() == url
+               $0.bundleURL?.normalizedApplicationURL == url
            }) {
             menu.addItem(.separator())
             menu.addItem(NativeMenuAction.item(running.isHidden ? "Show" : "Hide") {

@@ -85,6 +85,14 @@ extension DockStore {
 extension DockItem {
     var applicationURL: URL? {
         guard kind == .application, let url, let parsed = URL(string: url), parsed.isFileURL else { return nil }
-        return parsed.standardizedFileURL.resolvingSymlinksInPath()
+        return parsed.normalizedApplicationURL
+    }
+}
+
+extension URL {
+    var normalizedApplicationURL: URL {
+        // App bundles are directories, regardless of how their URL was saved.
+        // Foundation otherwise distinguishes the same path with and without '/'.
+        URL(fileURLWithPath: standardizedFileURL.resolvingSymlinksInPath().path, isDirectory: true)
     }
 }

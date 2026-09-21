@@ -99,6 +99,8 @@ final class NativeDockDragTests: XCTestCase {
                 XCTAssertNotNil(actions.item(withTitle: NSRunningApplication.current.isHidden ? "Show" : "Hide"))
             }
         }
+        XCTAssertEqual(NativeApplications.runningCount(folder, runningURLs: [bundle, alias]), 1)
+        XCTAssertTrue(NativeApplications.unpinnedURLs([bundle, alias], in: [folder]).isEmpty)
     }
 
     func testFolderPagesKeepSizeAndClampAfterRemovingLastPage() throws {

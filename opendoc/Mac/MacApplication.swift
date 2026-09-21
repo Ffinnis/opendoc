@@ -401,14 +401,14 @@ enum NativeApplications {
 
     static func unpinnedURLs(_ urls: [URL], in items: [DockItem]) -> [URL] {
         var seen = Set(items.flatMap(\.containedItems).compactMap(\.applicationURL))
-        return urls.filter { seen.insert($0.standardizedFileURL.resolvingSymlinksInPath()).inserted }
+        return urls.filter { seen.insert($0.normalizedApplicationURL).inserted }
     }
 
     static func isRunning(_ item: DockItem) -> Bool {
         let urls = Set(item.containedItems.compactMap(\.applicationURL))
         guard !urls.isEmpty else { return false }
         return NSWorkspace.shared.runningApplications.contains {
-            $0.bundleURL.map { urls.contains($0.standardizedFileURL.resolvingSymlinksInPath()) } == true
+            $0.bundleURL.map { urls.contains($0.normalizedApplicationURL) } == true
         }
     }
 
@@ -419,7 +419,7 @@ enum NativeApplications {
     static func runningCount(_ item: DockItem, runningURLs: [URL]) -> Int {
         let contained = Set(item.containedItems.compactMap(\.applicationURL))
         guard !contained.isEmpty else { return 0 }
-        let running = Set(runningURLs.map { $0.standardizedFileURL.resolvingSymlinksInPath() })
+        let running = Set(runningURLs.map(\.normalizedApplicationURL))
         return contained.intersection(running).count
     }
 }
