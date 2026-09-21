@@ -14,6 +14,7 @@ final class NativeDockDragTests: XCTestCase {
     }
 
     func testOpenFolderEditRefreshesMagnifiedArtworkAndRunningDot() throws {
+        try XCTSkipIf(NativeMotion.reducesMotion, "Magnification is disabled by Reduce Motion.")
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".json")
         defer { try? FileManager.default.removeItem(at: url) }
         let store = DockStore(fileURL: url)
@@ -34,6 +35,14 @@ final class NativeDockDragTests: XCTestCase {
         let image = try XCTUnwrap(artwork.layer?.sublayers?.first)
         let dot = try XCTUnwrap(artwork.layer?.sublayers?.dropFirst().first)
         let oldContents = try XCTUnwrap(image.contents) as AnyObject
+        if #available(macOS 26.0, *) {
+            let glass = try XCTUnwrap(overlay.contentView?.subviews.compactMap { $0 as? NSGlassEffectView }.first { $0.contentView is NSImageView })
+            XCTAssertNotNil((glass.contentView as? NSImageView)?.image)
+            XCTAssertEqual(glass.frame, image.frame)
+            XCTAssertFalse(glass.isHidden)
+            XCTAssertEqual(glass.alphaValue, 1)
+            XCTAssertTrue(image.isHidden, "The preview belongs inside native glass, without a duplicate layer above it")
+        }
         XCTAssertFalse(dot.isHidden)
         let magnifier = try XCTUnwrap(overlay.windowController as? NativeDockMagnification)
         let visible = image.presentation()?.frame ?? image.frame
@@ -92,6 +101,7 @@ final class NativeDockDragTests: XCTestCase {
     }
 
     func testFolderDragKeepsOverlayUntilReleaseAndCommitsOrder() throws {
+        try XCTSkipIf(NativeMotion.reducesMotion, "Magnification is disabled by Reduce Motion.")
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".json")
         defer { try? FileManager.default.removeItem(at: url) }
         let store = DockStore(fileURL: url)

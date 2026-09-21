@@ -387,7 +387,26 @@ final class opendocTests: XCTestCase {
         XCTAssertTrue(layer.animationKeys()?.isEmpty ?? true)
     }
 
+    func testReducedMotionOpensWidgetOnRestingDock() throws {
+        try XCTSkipUnless(NativeMotion.reducesMotion, "Runs with Reduce Motion enabled.")
+        let store = makeStore()
+        var profile = store.active
+        let clock = DockItem.widget(.clock)
+        profile.items = [clock]
+        profile.appearance.autoHide = false
+        try store.update(profile)
+        let dock = NativeDockController(profileID: profile.id, store: store, application: MacApplication())
+        defer { dock.close() }
+        dock.showWindow(nil)
+        dock.previewMagnification()
+        XCTAssertTrue(dock.window?.isVisible == true)
+        XCTAssertFalse(dock.window?.childWindows?.contains { $0.title == "Dock Magnification" } == true)
+        dock.open(clock)
+        XCTAssertFalse(dock.window?.childWindows?.isEmpty ?? true)
+    }
+
     func testOpeningWidgetKeepsMagnifiedRowAndPopoverAnchor() throws {
+        try XCTSkipIf(NativeMotion.reducesMotion, "Magnification is disabled by Reduce Motion.")
         let store = makeStore()
         var profile = store.active
         let clock = DockItem.widget(.clock)

@@ -12,6 +12,7 @@ final class NativeDockMagnification: NSWindowController, NSMenuDelegate {
     private var images: [CALayer] = []
     private var dots: [CALayer] = []
     private var folderGlass: [NSView?] = []
+    private var folderPreviews: [NSImageView?] = []
     private var hitRects: [NSRect] {
         images.indices.map { NativeDockWave.hitRect(artwork: visibleFrame(at: $0), tileWidth: widths[$0]) }
     }
@@ -86,13 +87,24 @@ final class NativeDockMagnification: NSWindowController, NSMenuDelegate {
                          y: screenRect.minY - frame.minY + (tile.bounds.height + 5 - side) / 2,
                          width: side, height: side))
             dotY.append(screenRect.minY - frame.minY)
-            let glass = tile.item.kind == .folder ? DockGlassRoot.makeFolderMaterial(containing: NSView()) : nil
-            if let glass { surface.addSubview(glass, positioned: .below, relativeTo: artwork) }
+            // Glass owns its preview, just as in the resting tile. An empty
+            // material beneath a separate artwork layer can be culled by AppKit
+            // when this transparent child window becomes the visible dock.
+            let preview = tile.item.kind == .folder ? NSImageView(image: NativeApplications.icon(for: tile.item)) : nil
+            preview?.imageScaling = .scaleProportionallyUpOrDown
+            let glass = preview.map { DockGlassRoot.makeFolderMaterial(containing: $0) }
+            if let glass {
+                glass.frame = baseRects.last!
+                surface.addSubview(glass, positioned: .above, relativeTo: artwork)
+                glass.layoutSubtreeIfNeeded()
+            }
             folderGlass.append(glass)
+            folderPreviews.append(preview)
             let image = CALayer()
             image.contentsGravity = .resizeAspect
             image.contentsScale = panel.backingScaleFactor
             image.contents = Self.artwork(for: tile)
+            image.isHidden = preview != nil
             artwork.layer?.addSublayer(image); images.append(image)
             let dot = CALayer(); dot.backgroundColor = NSColor.labelColor.withAlphaComponent(0.7).cgColor
             dot.cornerRadius = 1.5; dot.isHidden = !NativeApplications.isRunning(tile.item)
@@ -122,7 +134,10 @@ final class NativeDockMagnification: NSWindowController, NSMenuDelegate {
 
     func refreshItems() {
         CATransaction.begin(); CATransaction.setDisableActions(true)
-        for (index, tile) in tiles.enumerated() { images[index].contents = Self.artwork(for: tile) }
+        for (index, tile) in tiles.enumerated() {
+            images[index].contents = Self.artwork(for: tile)
+            folderPreviews[index]?.image = NativeApplications.icon(for: tile.item)
+        }
         CATransaction.commit()
         refreshRunningIndicators()
     }
@@ -167,6 +182,7 @@ final class NativeDockMagnification: NSWindowController, NSMenuDelegate {
             NativeDockWave.move(images[index], to: rect, duration: duration)
             if let glass = folderGlass[index] {
                 NativeDockWave.move(glass, to: rect, duration: duration)
+                glass.layoutSubtreeIfNeeded()
             }
             NativeDockWave.move(dots[index], to: NSRect(x: rect.midX - 1.5, y: dotY[index], width: 3, height: 3), duration: duration)
         }
@@ -251,6 +267,7 @@ final class NativeDockMagnification: NSWindowController, NSMenuDelegate {
                                y: layer.position.y - size.height * visualScale / 2,
                                width: size.width * visualScale, height: size.height * visualScale)
             NativeDockWave.move(glass, to: frame, duration: duration)
+            glass.alphaValue = pressed ? 0.72 : 1
         }
         layer.transform = transform
         layer.opacity = pressed ? 0.72 : 1

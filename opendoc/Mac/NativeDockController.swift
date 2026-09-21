@@ -641,23 +641,8 @@ final class DockGlassRoot: NSView {
         }
     }
 
-    /// Folder tiles move between the dock and a transparent magnification panel.
-    /// NSGlassEffectView can lose its material in that panel's compositing group;
-    /// an active behind-window effect keeps the same blur in both locations.
-    static func makeFolderMaterial(containing content: NSView) -> NSVisualEffectView {
-        let effect = NSVisualEffectView()
-        effect.material = .hudWindow
-        effect.blendingMode = .behindWindow
-        effect.state = .active
-        effect.wantsLayer = true
-        effect.layer?.cornerRadius = 13
-        effect.layer?.masksToBounds = true
-        effect.layer?.borderWidth = 0.75
-        effect.layer?.borderColor = NSColor.white.withAlphaComponent(0.22).cgColor
-        effect.addSubview(content)
-        content.frame = effect.bounds
-        content.autoresizingMask = [.width, .height]
-        return effect
+    static func makeFolderMaterial(containing content: NSView) -> NSView {
+        makeMaterial(containing: content, cornerRadius: 13)
     }
 
     static func configure(_ material: NSView, appearance: DockAppearance) {

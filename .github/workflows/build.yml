@@ -12,10 +12,15 @@ jobs:
   mac:
     runs-on: macos-26
     timeout-minutes: 20
+    strategy:
+      matrix:
+        reduce-motion: [false, true]
     steps:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
+      - name: Configure runner motion preference
+        run: defaults write com.apple.universalaccess reduceMotion -bool ${{ matrix.reduce-motion }}
       - name: Run Mac unit tests
         run: >-
           xcodebuild -project opendoc.xcodeproj -scheme opendoc
