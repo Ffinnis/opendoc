@@ -141,6 +141,18 @@ final class NativeDockDragTests: XCTestCase {
         }
     }
 
+    func testFolderCountsDistinctRunningAppsAndTracksExits() {
+        let a = URL(fileURLWithPath: "/Applications/A.app")
+        let b = URL(fileURLWithPath: "/Applications/B.app")
+        let other = URL(fileURLWithPath: "/Applications/Other.app")
+        var folder = DockItem(kind: .folder, title: "Tools", symbol: "folder")
+        folder.children = [NativeApplications.item(for: a), NativeApplications.item(for: b), NativeApplications.item(for: a)]
+        XCTAssertEqual(NativeApplications.runningCount(folder, runningURLs: [a, b, a, other]), 2)
+        XCTAssertEqual(NativeApplications.runningCount(folder, runningURLs: [b, other]), 1)
+        XCTAssertEqual(NativeApplications.runningCount(folder, runningURLs: [other]), 0)
+        XCTAssertEqual(NativeApplications.runningCount(NativeApplications.item(for: a), runningURLs: [a, a]), 1)
+    }
+
     func testFolderRunningIndicatorIncludesItsApplications() throws {
         let url = try XCTUnwrap(NSWorkspace.shared.runningApplications.compactMap(\.bundleURL).first)
         let app = NativeApplications.item(for: url)

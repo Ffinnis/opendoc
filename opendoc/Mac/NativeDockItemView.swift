@@ -4,13 +4,13 @@ import IOKit.ps
 import QuartzCore
 
 final class NativeDockItemView: FlippedNativeView {
-    var item: DockItem { didSet { running = NativeApplications.isRunning(item); if item.kind == .folder { icon = NativeApplications.icon(for: item) }; toolTip = item.title; setAccessibilityLabel(item.title); updateFolderGlass(); lastRefreshBucket = nil; refreshIfNeeded(at: Date()); needsDisplay = true } }
+    var item: DockItem { didSet { runningCount = NativeApplications.runningCount(item); if item.kind == .folder { icon = NativeApplications.icon(for: item) }; toolTip = item.title; setAccessibilityLabel(item.title); updateFolderGlass(); lastRefreshBucket = nil; refreshIfNeeded(at: Date()); needsDisplay = true } }
     let iconSize: CGFloat
     let vertical: Bool
     weak var controller: NativeDockController?
     private var hoverAmount: CGFloat = 0
     private var pressAmount: CGFloat = 0
-    private var running = false
+    private var runningCount = 0
     private var lastRefreshBucket: Int?
     private var dataReading = NativeWidgetData.Reading(value: "…", detail: "Loading…")
     private var customReading = NativeCustomWidgetData.Reading()
@@ -32,7 +32,7 @@ final class NativeDockItemView: FlippedNativeView {
         self.iconSize = iconSize
         self.vertical = vertical
         self.icon = NativeApplications.icon(for: item)
-        self.running = NativeApplications.isRunning(item)
+        self.runningCount = NativeApplications.runningCount(item)
         super.init(frame: .zero)
         toolTip = item.title
         wantsLayer = true
@@ -78,9 +78,15 @@ final class NativeDockItemView: FlippedNativeView {
         if item.kind == .widget {
             drawWidget()
         } else {
-            if running {
+            if runningCount > 0 {
+                let spacing = min(6, max(1, bounds.width - 12) / CGFloat(runningCount))
+                let diameter = min(3, spacing / 2)
+                let width = CGFloat(runningCount - 1) * spacing + diameter
                 NSColor.labelColor.withAlphaComponent(0.7).setFill()
-                NSBezierPath(ovalIn: NSRect(x: bounds.midX - 1.5, y: bounds.maxY - 3, width: 3, height: 3)).fill()
+                for index in 0..<runningCount {
+                    NSBezierPath(ovalIn: NSRect(x: bounds.midX - width / 2 + CGFloat(index) * spacing,
+                        y: bounds.maxY - 3, width: diameter, height: diameter)).fill()
+                }
             }
         }
     }
@@ -120,9 +126,9 @@ final class NativeDockItemView: FlippedNativeView {
     }
 
     func refreshRunningIndicator() {
-        let value = NativeApplications.isRunning(item)
-        guard value != running else { return }
-        running = value
+        let value = NativeApplications.runningCount(item)
+        guard value != runningCount else { return }
+        runningCount = value
         needsDisplay = true
     }
 

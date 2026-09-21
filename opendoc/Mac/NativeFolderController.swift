@@ -126,7 +126,8 @@ final class NativeFolderController: NSViewController, NSPopoverDelegate, NSTextF
             button.imageScaling = .scaleProportionallyUpOrDown
             button.isBordered = false
             button.frame = NSRect(x: x + 2, y: y, width: cellWidth - 4, height: rowHeight - 4)
-            button.toolTip = item.title
+            let titleWidth = (item.title as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: 12)]).width
+            button.toolTip = titleWidth > button.bounds.width - 8 ? item.title : nil
             button.setAccessibilityLabel(item.title)
             let menu = NSMenu()
             menu.delegate = self
@@ -197,15 +198,21 @@ private final class FolderAppButton: NSButton {
         isBordered = false
         target = self
         action = #selector(invoke)
-        focusRingType = .exterior
+        focusRingType = .none
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
     @objc private func invoke() { handler() }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
     override var isFlipped: Bool { true }
-    override var focusRingMaskBounds: NSRect { bounds.insetBy(dx: 1, dy: 1) }
-    override func drawFocusRingMask() {
-        NSBezierPath(roundedRect: focusRingMaskBounds, xRadius: 10, yRadius: 10).fill()
+    override func becomeFirstResponder() -> Bool {
+        let accepted = super.becomeFirstResponder()
+        needsDisplay = true
+        return accepted
+    }
+    override func resignFirstResponder() -> Bool {
+        let accepted = super.resignFirstResponder()
+        needsDisplay = true
+        return accepted
     }
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
@@ -220,8 +227,9 @@ private final class FolderAppButton: NSButton {
     override func mouseEntered(with event: NSEvent) { hovered = true; needsDisplay = true }
     override func mouseExited(with event: NSEvent) { hovered = false; needsDisplay = true }
     override func draw(_ dirtyRect: NSRect) {
-        if hovered || isHighlighted {
-            NSColor.labelColor.withAlphaComponent(isHighlighted ? 0.16 : 0.08).setFill()
+        let focused = window?.firstResponder === self
+        if hovered || isHighlighted || focused {
+            NSColor.labelColor.withAlphaComponent(isHighlighted ? 0.18 : focused ? 0.12 : 0.07).setFill()
             NSBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 1), xRadius: 10, yRadius: 10).fill()
         }
         image?.draw(in: NSRect(x: (bounds.width - 56) / 2, y: 2, width: 56, height: 56),

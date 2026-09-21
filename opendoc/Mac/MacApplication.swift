@@ -395,5 +395,16 @@ enum NativeApplications {
             $0.bundleURL.map { urls.contains($0.standardizedFileURL.resolvingSymlinksInPath()) } == true
         }
     }
+
+    static func runningCount(_ item: DockItem) -> Int {
+        runningCount(item, runningURLs: NSWorkspace.shared.runningApplications.compactMap(\.bundleURL))
+    }
+
+    static func runningCount(_ item: DockItem, runningURLs: [URL]) -> Int {
+        let contained = Set(item.containedItems.compactMap(\.applicationURL))
+        guard !contained.isEmpty else { return 0 }
+        let running = Set(runningURLs.map { $0.standardizedFileURL.resolvingSymlinksInPath() })
+        return contained.intersection(running).count
+    }
 }
 #endif
