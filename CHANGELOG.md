@@ -3,7 +3,7 @@
 ## Unreleased
 
 - Reopen running applications through Launch Services so Finder can show a window after its last window was closed.
-- Add New Window to the dock and folder menus for Finder, Safari, Chrome, Chromium, Brave, and Edge. macOS asks for Automation permission on first use.
+- Detect New Window support from each application's scripting dictionary and show the action in dock and folder menus. Detection is cached until the dictionary changes. macOS asks for Automation permission on first use.
 
 ## 1.1.1
 
