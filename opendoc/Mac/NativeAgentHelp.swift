@@ -60,7 +60,7 @@ enum NativeAgentHelp {
             result = "result contains value, detail, and optional progress (0...1). Code receives state, input.text, input.matches. It has no file/shell/network APIs and stops after 2 seconds. HTML extraction reads returned HTML without site scripts or browser login."
         case "dock.update":
             description = "Change a dock's supported native appearance, name, or visibility."
-            fields = ["dockID": "Required UUID from state.", "patch": "Optional object: name, symbol, color, appearance. Appearance: position (Bottom/Left/Right), material (Glass/Light/Dark), size (36...88 points), autoHide (boolean), showLabels (boolean), wallpaper (Meadow/Dusk/Ocean, workspace preview only).", "visible": "Optional boolean. Hiding the last visible dock restores Apple's Dock."]
+            fields = ["dockID": "Required UUID from state.", "patch": "Optional object: name, symbol, color, appearance. Appearance: position (Bottom/Left/Right), material (Glass/Light/Dark), glassStyle (Clear/Regular), glassTint (0...1, added tint strength), size (36...88 points), autoHide (boolean), showLabels (boolean), wallpaper (Meadow/Dusk/Ocean, workspace preview only).", "visible": "Optional boolean. Hiding the last visible dock restores Apple's Dock."]
             required = ["dockID"]
             example = ["dockID": "DOCK_UUID", "patch": ["appearance": ["position": "Bottom", "material": "Glass", "size": 48, "autoHide": true]]]
             result = "result is the updated dock. Arbitrary CSS or native view injection is not supported."

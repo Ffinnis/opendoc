@@ -28,7 +28,7 @@ final class NativeDockDragTests: XCTestCase {
         controller.showWindow(nil)
         XCTAssertEqual(controller.window?.allowsToolTipsWhenApplicationIsInactive, true)
         controller.previewMagnification()
-        let overlay = try XCTUnwrap(controller.window?.childWindows?.first)
+        let overlay = try XCTUnwrap(controller.window?.childWindows?.first, "Reduce Motion: \(NativeMotion.reducesMotion), screens: \(NSScreen.screens.map(\.frame)), dock: \(String(describing: controller.window?.frame))")
         XCTAssertTrue(overlay.allowsToolTipsWhenApplicationIsInactive)
         let artwork = try XCTUnwrap(overlay.contentView?.subviews.first { ($0.layer?.sublayers?.count ?? 0) >= 2 })
         let image = try XCTUnwrap(artwork.layer?.sublayers?.first)
@@ -115,7 +115,7 @@ final class NativeDockDragTests: XCTestCase {
         let source = try XCTUnwrap(views.first { $0.item.id == folder.id })
         let target = try XCTUnwrap(views.first { $0.item.id == clock.id })
         controller.previewMagnification()
-        let overlay = try XCTUnwrap(panel.childWindows?.first)
+        let overlay = try XCTUnwrap(panel.childWindows?.first, "Reduce Motion: \(NativeMotion.reducesMotion), screens: \(NSScreen.screens.map(\.frame)), dock: \(panel.frame)")
         controller.beginDrag(source)
         controller.reload() // A concurrent workspace notification must not end the drag.
         controller.updatePointer()

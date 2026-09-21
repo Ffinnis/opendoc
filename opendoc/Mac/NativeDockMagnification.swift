@@ -60,6 +60,7 @@ final class NativeDockMagnification: NSWindowController, NSMenuDelegate {
         surface.appearance = dock.window?.contentView?.effectiveAppearance
         restingBar = NSRect(x: parentFrame.minX - frame.minX, y: 0, width: bar.width, height: bar.height)
         restingSettings = originalSettings.convert(originalSettings.bounds, to: nil).offsetBy(dx: parentFrame.minX - frame.minX, dy: 0)
+        if let appearance = dock.profile?.appearance { DockGlassRoot.configure(backdrop, appearance: appearance) }
         backdrop.frame = restingBar
         surface.addSubview(backdrop)
         // Keep cached artwork in a sibling view above the material. AppKit

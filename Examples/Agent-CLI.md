@@ -81,3 +81,10 @@ For a webpage preview, include `source: "webpage"`, `endpoint`, `selector`, and 
 The running app serves a same-user Unix socket under `/tmp/opendoc-agent-UID/`. The directory has mode 0700, the socket 0600, and both client and server verify the peer's user ID. It opens no TCP port and exposes no shell execution operation. Requests run serially through the app's main-actor model; socket I/O stays off the UI thread. Closing the app stops the service. Test-mode app instances do not start it.
 
 `ifRevision` hashes the current archive and visible dock IDs. A mismatch returns a conflict before applying a change. Read state and reapply your intended patch. A timed-out mutation can have succeeded, so inspect state before retrying. This is a local CLI protocol, not an MCP server. An MCP adapter can call these operations without changing the app's command handling.
+
+### Glass appearance
+
+Use `dock.update` with `patch.appearance.glassStyle` set to `Clear` or `Regular`.
+`glassTint` adds a dark tint from `0` to `1`; `0` leaves Apple's material untinted.
+These settings apply to the shelf at rest and during magnification. They are also
+available under Appearance in Settings. macOS versions before 26 use a native blur fallback.

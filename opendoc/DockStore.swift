@@ -145,6 +145,24 @@ struct DockAppearance: Codable {
     var size: Double = 60
     var autoHide = true
     var showLabels = true
+    var glassStyle = "Regular"
+    var glassTint: Double = 0
+
+    init() {}
+    enum CodingKeys: String, CodingKey {
+        case position, material, wallpaper, size, autoHide, showLabels, glassStyle, glassTint
+    }
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        position = try values.decode(String.self, forKey: .position)
+        material = try values.decode(String.self, forKey: .material)
+        wallpaper = try values.decode(String.self, forKey: .wallpaper)
+        size = try values.decode(Double.self, forKey: .size)
+        autoHide = try values.decode(Bool.self, forKey: .autoHide)
+        showLabels = try values.decode(Bool.self, forKey: .showLabels)
+        glassStyle = try values.decodeIfPresent(String.self, forKey: .glassStyle) ?? "Regular"
+        glassTint = try values.decodeIfPresent(Double.self, forKey: .glassTint) ?? 0
+    }
 }
 
 struct DockProfile: Codable, Identifiable {
@@ -171,6 +189,8 @@ struct DockArchive: Codable {
                   profile.items.count <= 200, (36...88).contains(profile.appearance.size),
                   ["Left", "Bottom", "Right"].contains(profile.appearance.position),
                   ["Glass", "Light", "Dark"].contains(profile.appearance.material),
+                  ["Clear", "Regular"].contains(profile.appearance.glassStyle),
+                  (0...1).contains(profile.appearance.glassTint),
                   ["Meadow", "Dusk", "Ocean"].contains(profile.appearance.wallpaper) else { throw StoreError.invalidArchive }
             guard profile.items.allSatisfy({ item in
                 if item.kind == .folder {

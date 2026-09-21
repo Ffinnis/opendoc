@@ -179,7 +179,7 @@ final class NativeAgentCommands {
          "widgetPatchFields": ["title", "symbol", "color", "url", "note", "checklist", "count", "countDay", "timeZone", "duration", "remaining", "startedAt", "deadline", "web", "custom"],
          "widgetDefaults": try object(DockItem.widget(.custom)),
          "customTemplates": ["counter": try object(CustomWidgetConfiguration()), "water": try object(CustomWidgetConfiguration.water()), "webpage": try object(CustomWidgetConfiguration.webpage())],
-         "appearance": ["position": ["Bottom", "Left", "Right"], "material": ["Glass", "Light", "Dark"], "size": ["minimum": 36, "maximum": 88], "autoHide": "boolean", "showLabels": "boolean", "wallpaper": ["Meadow", "Dusk", "Ocean"]],
+         "appearance": ["position": ["Bottom", "Left", "Right"], "material": ["Glass", "Light", "Dark"], "size": ["minimum": 36, "maximum": 88], "glassStyle": ["Clear", "Regular"], "glassTint": ["minimum": 0, "maximum": 1], "autoHide": "boolean", "showLabels": "boolean", "wallpaper": ["Meadow", "Dusk", "Ocean"]],
          "notes": ["UUIDs come from state. No name matching.", "Patch objects merge; arrays, state and initialState replace. null clears optional fields.", "Unknown fields are rejected. IDs and widget kind cannot be changed.", "dryRun validates mutations without saving. Preview executes scripts and may fetch its URL.", "ifRevision rejects edits based on stale state. No automatic retries of mutations.", "Dates use JSONEncoder seconds since 2001-01-01 UTC.", "UI is native and constrained to supported appearance fields; no arbitrary CSS or native view injection."]]
     }
 }

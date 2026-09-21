@@ -148,6 +148,7 @@ final class NativeDockController: NSWindowController, NSMenuDelegate {
         window?.title = profile.name
         root.setAccessibilityLabel("\(profile.name) Dock")
         root.appearance = profile.appearance.material == "Dark" ? NSAppearance(named: .darkAqua) : profile.appearance.material == "Light" ? NSAppearance(named: .aqua) : nil
+        root.configure(profile.appearance)
         let vertical = profile.appearance.position != "Bottom"
         let size = CGFloat(profile.appearance.size)
         let folderApps = Set(profile.items.filter { $0.kind == .folder }.flatMap { $0.children ?? [] }.compactMap(\.applicationURL))
@@ -658,6 +659,18 @@ final class DockGlassRoot: NSView {
         content.autoresizingMask = [.width, .height]
         return effect
     }
+
+    static func configure(_ material: NSView, appearance: DockAppearance) {
+        if #available(macOS 26.0, *), let glass = material as? NSGlassEffectView {
+            glass.style = appearance.glassStyle == "Clear" ? .clear : .regular
+            glass.tintColor = appearance.glassTint == 0 ? nil : NSColor.black.withAlphaComponent(appearance.glassTint * 0.6)
+        } else if let effect = material as? NSVisualEffectView {
+            effect.material = appearance.glassStyle == "Clear" ? .underWindowBackground : .hudWindow
+            effect.layer?.backgroundColor = NSColor.black.withAlphaComponent(appearance.glassTint * 0.6).cgColor
+        }
+    }
+
+    func configure(_ appearance: DockAppearance) { Self.configure(material, appearance: appearance) }
 
     static func makeMaterial(containing content: NSView, cornerRadius: CGFloat = 18) -> NSView {
         if #available(macOS 26.0, *) {

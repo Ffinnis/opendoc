@@ -12,6 +12,9 @@ final class NativePreferencesController: NSWindowController, NSTableViewDataSour
     private let replace = NSButton(checkboxWithTitle: "Replace Apple’s Dock while Open Doc is running", target: nil, action: nil)
     private let position = NSSegmentedControl(labels: ["Left", "Bottom", "Right"], trackingMode: .selectOne, target: nil, action: nil)
     private let material = NSPopUpButton()
+    private let glassStyle = NSSegmentedControl(labels: ["Clear", "Regular"], trackingMode: .selectOne, target: nil, action: nil)
+    private let tintSlider = NSSlider(value: 0, minValue: 0, maxValue: 1, target: nil, action: nil)
+    private let tintLabel = NSTextField(labelWithString: "None")
     private let sizeSlider = NSSlider(value: 44, minValue: 36, maxValue: 88, target: nil, action: nil)
     private let sizeLabel = NSTextField(labelWithString: "44 pt")
     private let autoHide = NSButton(checkboxWithTitle: "Automatically hide and show this dock", target: nil, action: nil)
@@ -113,6 +116,15 @@ final class NativePreferencesController: NSWindowController, NSTableViewDataSour
         autoHide.target = self; autoHide.action = #selector(changeAppearance)
         options.addArrangedSubview(formRow("Position", position))
         options.addArrangedSubview(formRow("Material", material))
+        glassStyle.target = self; glassStyle.action = #selector(changeAppearance)
+        glassStyle.setAccessibilityLabel("Glass style")
+        options.addArrangedSubview(formRow("Glass", glassStyle))
+        tintSlider.target = self; tintSlider.action = #selector(changeAppearance)
+        tintSlider.isContinuous = false
+        tintSlider.widthAnchor.constraint(equalToConstant: 200).isActive = true
+        tintSlider.setAccessibilityLabel("Glass tint strength")
+        let tint = NSStackView(views: [tintSlider, tintLabel]); tint.spacing = 10
+        options.addArrangedSubview(formRow("Tint", tint))
         let sizing = NSStackView(views: [sizeSlider, sizeLabel]); sizing.orientation = .horizontal; sizing.spacing = 10
         options.addArrangedSubview(formRow("Icon size", sizing))
         options.addArrangedSubview(autoHide)
@@ -154,6 +166,9 @@ final class NativePreferencesController: NSWindowController, NSTableViewDataSour
         let appearance = store.active.appearance
         position.selectedSegment = ["Left", "Bottom", "Right"].firstIndex(of: appearance.position) ?? 1
         material.selectItem(at: ["Glass", "Light", "Dark"].firstIndex(of: appearance.material) ?? 0)
+        glassStyle.selectedSegment = appearance.glassStyle == "Clear" ? 0 : 1
+        tintSlider.doubleValue = appearance.glassTint
+        tintLabel.stringValue = appearance.glassTint == 0 ? "None" : "\(Int(appearance.glassTint * 100))%"
         sizeSlider.doubleValue = appearance.size; sizeLabel.stringValue = "\(Int(appearance.size)) pt"
         autoHide.state = appearance.autoHide ? .on : .off
         items.reloadData()
@@ -229,6 +244,8 @@ final class NativePreferencesController: NSWindowController, NSTableViewDataSour
         var profile = store.active
         profile.appearance.position = ["Left", "Bottom", "Right"][position.selectedSegment]
         profile.appearance.material = ["Glass", "Light", "Dark"][material.indexOfSelectedItem]
+        profile.appearance.glassStyle = glassStyle.selectedSegment == 0 ? "Clear" : "Regular"
+        profile.appearance.glassTint = tintSlider.doubleValue
         profile.appearance.size = sizeSlider.doubleValue.rounded()
         profile.appearance.autoHide = autoHide.state == .on
         save(profile)

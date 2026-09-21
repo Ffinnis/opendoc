@@ -16,6 +16,33 @@ final class AgentCommandTests: XCTestCase {
         XCTAssertThrowsError(try NativeAgentHelp.render(command: "unknown", json: false))
     }
 
+    func testGlassAppearanceMigrationAndAgentValidation() async throws {
+        let legacy = Data(#"{"position":"Bottom","material":"Glass","wallpaper":"Meadow","size":60,"autoHide":true,"showLabels":true}"#.utf8)
+        let appearance = try JSONDecoder().decode(DockAppearance.self, from: legacy)
+        XCTAssertEqual(appearance.glassStyle, "Regular")
+        XCTAssertEqual(appearance.glassTint, 0)
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("glass-\(UUID()).json")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let store = DockStore(fileURL: url)
+        let commands = NativeAgentCommands(store: store, visible: { _ in false }, setVisible: { _, _ in })
+        func update(_ patch: [String: Any]) async throws -> Bool {
+            let request: [String: Any] = ["op": "dock.update", "params": ["dockID": store.active.id.uuidString, "patch": ["appearance": patch]]]
+            let result = await commands.handle(try JSONSerialization.data(withJSONObject: request))
+            return (try JSONSerialization.jsonObject(with: result) as? [String: Any])?["ok"] as? Bool == true
+        }
+        let accepted = try await update(["glassStyle": "Clear", "glassTint": 0.35])
+        XCTAssertTrue(accepted)
+        let restored = DockStore(fileURL: url)
+        XCTAssertEqual(restored.active.appearance.glassStyle, "Clear")
+        XCTAssertEqual(restored.active.appearance.glassTint, 0.35)
+        let before = try store.exportData()
+        for patch: [String: Any] in [["glassTint": -0.1], ["glassTint": 1.1], ["glassStyle": "Unknown"]] {
+            let accepted = try await update(patch)
+            XCTAssertFalse(accepted)
+            XCTAssertEqual(try store.exportData(), before)
+        }
+    }
+
     func testAgentEditsAreValidatedAndRevisionProtected() async throws {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("agent-test-\(UUID()).json")
         defer { try? FileManager.default.removeItem(at: url) }

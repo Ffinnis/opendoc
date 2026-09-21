@@ -399,7 +399,7 @@ final class opendocTests: XCTestCase {
         defer { dock.close() }
         dock.showWindow(nil)
         dock.previewMagnification()
-        let overlay = try XCTUnwrap(dock.window?.childWindows?.first { $0.title == "Dock Magnification" })
+        let overlay = try XCTUnwrap(dock.window?.childWindows?.first { $0.title == "Dock Magnification" }, "Reduce Motion: \(NativeMotion.reducesMotion), screens: \(NSScreen.screens.map(\.frame)), dock: \(String(describing: dock.window?.frame))")
         dock.open(clock)
         XCTAssertTrue(overlay.isVisible, "Opening a widget must not collapse the magnified row")
         XCTAssertTrue(dock.window?.childWindows?.contains { $0 === overlay } == true)
