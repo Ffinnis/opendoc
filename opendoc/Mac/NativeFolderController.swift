@@ -1,5 +1,6 @@
 #if os(macOS)
 import AppKit
+import QuartzCore
 import UniformTypeIdentifiers
 
 final class NativeFolderController: NSViewController, NSPopoverDelegate, NSTextFieldDelegate, NSMenuDelegate {
@@ -12,6 +13,11 @@ final class NativeFolderController: NSViewController, NSPopoverDelegate, NSTextF
     private var appButtons: [FolderAppButton] = []
     private var contextMenuOpen = false
     private var renderedFolder: Data?
+    private var pageIndex = 0
+    private let pageGrid = FolderPageGrid()
+    private var previousPageButton: NSButton?
+    private var nextPageButton: NSButton?
+    private var pageLabel: NSTextField?
     var isShown: Bool { popover.isShown }
     private var folder: DockItem? { dock?.profile?.items.first { $0.id == folderID } }
 
@@ -74,17 +80,17 @@ final class NativeFolderController: NSViewController, NSPopoverDelegate, NSTextF
         renderedFolder = snapshot
         view.subviews.forEach { $0.removeFromSuperview() }
         let children = folder.children ?? []
-        let columns = 2
-        let rows = max(1, (children.count + columns - 1) / columns)
+        let columns = children.count > 4 ? 3 : 2
+        let rows = max(1, (min(9, children.count) + columns - 1) / columns)
+        let pageCount = max(1, (children.count + 8) / 9)
+        pageIndex = min(pageIndex, pageCount - 1)
         let inset: CGFloat = 24
-        let width: CGFloat = 280
+        let width: CGFloat = columns == 3 ? 360 : 280
         let gridWidth = width - inset * 2
-        let cellWidth = gridWidth / CGFloat(columns)
-        let rowHeight: CGFloat = 102
+        let rowHeight: CGFloat = 100
         let gridHeight = CGFloat(rows) * rowHeight
-        let visibleHeight = min(rowHeight * 4, gridHeight)
         let gridTop: CGFloat = 60
-        let footerTop = gridTop + visibleHeight + 12
+        let footerTop = gridTop + gridHeight + (pageCount > 1 ? 36 : 12)
         let size = NSSize(width: width, height: footerTop + 60)
         view.setFrameSize(size)
         preferredContentSize = size
@@ -97,26 +103,66 @@ final class NativeFolderController: NSViewController, NSPopoverDelegate, NSTextF
         title.toolTip = "Click to rename this folder"
         title.setAccessibilityLabel("Folder name")
         view.addSubview(title)
-        let scroll = NSScrollView(frame: NSRect(x: inset, y: gridTop, width: gridWidth, height: visibleHeight))
-        scroll.drawsBackground = false
-        scroll.hasVerticalScroller = gridHeight > visibleHeight
-        scroll.autohidesScrollers = true
-        scroll.scrollerStyle = .overlay
-        scroll.horizontalScrollElasticity = .none
-        let grid = FlippedNativeView(frame: NSRect(x: 0, y: 0, width: gridWidth, height: gridHeight))
-        scroll.documentView = grid
-        view.addSubview(scroll)
+        pageGrid.frame = NSRect(x: inset, y: gridTop, width: gridWidth, height: gridHeight)
+        pageGrid.wantsLayer = true
+        pageGrid.clipsToBounds = true
+        pageGrid.onPage = { [weak self] offset in self?.changePage(by: offset) }
+        view.addSubview(pageGrid)
+        previousPageButton = nil; nextPageButton = nil; pageLabel = nil
+        if pageCount > 1 {
+            let previous = NativeButton("") { [weak self] in self?.changePage(by: -1) }
+            let next = NativeButton("") { [weak self] in self?.changePage(by: 1) }
+            for (button, symbol, label, x) in [
+                (previous, "chevron.left", "Previous page", width / 2 - 60),
+                (next, "chevron.right", "Next page", width / 2 + 32)
+            ] {
+                button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: label)
+                button.imagePosition = .imageOnly
+                button.setAccessibilityLabel(label)
+                button.controlSize = .small
+                button.frame = NSRect(x: x, y: gridTop + gridHeight + 1, width: 28, height: 24)
+                view.addSubview(button)
+            }
+            let label = NSTextField(labelWithString: "")
+            label.font = .monospacedDigitSystemFont(ofSize: 11, weight: .regular)
+            label.textColor = .secondaryLabelColor
+            label.alignment = .center
+            label.frame = NSRect(x: width / 2 - 30, y: gridTop + gridHeight + 5, width: 60, height: 18)
+            view.addSubview(label)
+            previousPageButton = previous; nextPageButton = next; pageLabel = label
+        }
+        renderPage()
+        let separator = NSBox(frame: NSRect(x: inset, y: footerTop, width: gridWidth, height: 1))
+        separator.boxType = .separator
+        view.addSubview(separator)
+        let add = NativeButton("Add Applications…") { [weak self] in self?.pickApplications() }
+        add.controlSize = .regular
+        add.font = .systemFont(ofSize: 13)
+        add.frame = NSRect(x: inset, y: footerTop + 13, width: 150, height: 28)
+        view.addSubview(add)
+        let count = NSTextField(labelWithString: children.count == 1 ? "1 app" : "\(children.count) apps")
+        count.textColor = .secondaryLabelColor; count.font = .systemFont(ofSize: 11)
+        count.alignment = .right
+        count.frame = NSRect(x: width - inset - 64, y: footerTop + 19, width: 64, height: 18)
+        view.addSubview(count)
+    }
+    private func renderPage() {
+        let children = folder?.children ?? []
+        let columns = children.count > 4 ? 3 : 2
+        let cellWidth = pageGrid.bounds.width / CGFloat(columns)
+        let rowHeight: CGFloat = 100
+        pageGrid.subviews.forEach { $0.removeFromSuperview() }
         if children.isEmpty {
             let empty = NSTextField(wrappingLabelWithString: "Add applications to this folder, or drag an app onto it in the dock.")
             empty.textColor = .secondaryLabelColor
             empty.alignment = .center
             empty.font = .systemFont(ofSize: 12)
-            empty.frame = NSRect(x: 8, y: 20, width: gridWidth - 16, height: 54)
-            grid.addSubview(empty)
+            empty.frame = pageGrid.bounds.insetBy(dx: 8, dy: 20)
+            pageGrid.addSubview(empty)
         }
         firstAppButton = nil
         appButtons = []
-        for (index, item) in children.enumerated() {
+        for (index, item) in children.dropFirst(pageIndex * 9).prefix(9).enumerated() {
             let x = CGFloat(index % columns) * cellWidth
             let y = CGFloat(index / columns) * rowHeight
             let button = FolderAppButton(item) { [weak self] in
@@ -143,22 +189,35 @@ final class NativeFolderController: NSViewController, NSPopoverDelegate, NSTextF
                 self?.edit { $0.children?.removeAll { $0.id == item.id } }
             })
             button.menu = menu
-            grid.addSubview(button)
+            pageGrid.addSubview(button)
         }
-        let separator = NSBox(frame: NSRect(x: inset, y: footerTop, width: gridWidth, height: 1))
-        separator.boxType = .separator
-        view.addSubview(separator)
-        let add = NativeButton("Add Applications…") { [weak self] in self?.pickApplications() }
-        add.controlSize = .regular
-        add.font = .systemFont(ofSize: 13)
-        add.frame = NSRect(x: inset, y: footerTop + 13, width: 150, height: 28)
-        view.addSubview(add)
-        let count = NSTextField(labelWithString: children.count == 1 ? "1 app" : "\(children.count) apps")
-        count.textColor = .secondaryLabelColor; count.font = .systemFont(ofSize: 11)
-        count.alignment = .right
-        count.frame = NSRect(x: width - inset - 64, y: footerTop + 19, width: 64, height: 18)
-        view.addSubview(count)
+        let pages = max(1, (children.count + 8) / 9)
+        previousPageButton?.isEnabled = pageIndex > 0
+        nextPageButton?.isEnabled = pageIndex + 1 < pages
+        pageLabel?.stringValue = "\(pageIndex + 1) / \(pages)"
+        pageLabel?.setAccessibilityLabel("Page \(pageIndex + 1) of \(pages)")
     }
+
+    private func changePage(by offset: Int) {
+        guard !contextMenuOpen else { return }
+        // Commit a pending rename before changing focus or replacing its view.
+        view.window?.makeFirstResponder(view)
+        let pages = max(1, ((folder?.children?.count ?? 0) + 8) / 9)
+        let next = min(max(0, pageIndex + offset), pages - 1)
+        guard next != pageIndex else { return }
+        pageIndex = next
+        if !NativeMotion.reducesMotion {
+            let transition = CATransition()
+            transition.type = .push
+            transition.subtype = offset > 0 ? .fromRight : .fromLeft
+            transition.duration = 0.18
+            transition.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            pageGrid.layer?.add(transition, forKey: "folderPage")
+        }
+        renderPage()
+        if let firstAppButton { view.window?.makeFirstResponder(firstAppButton) }
+    }
+
     func controlTextDidEndEditing(_ obj: Notification) {
         guard let field = obj.object as? NSTextField else { return }
         let name = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -182,6 +241,39 @@ final class NativeFolderController: NSViewController, NSPopoverDelegate, NSTextF
             do { try dock.store.addApplications(picker.urls.map { NativeApplications.item(for: $0) }, into: folderID, in: dock.profileID) }
             catch { dock.application?.report(error.localizedDescription) }
         }
+    }
+}
+
+private final class FolderPageGrid: FlippedNativeView {
+    var onPage: ((Int) -> Void)?
+    private var horizontalDistance: CGFloat = 0
+    private var turnedForGesture = false
+    private var lastTurn: TimeInterval = 0
+
+    override func scrollWheel(with event: NSEvent) {
+        guard event.momentumPhase.isEmpty else { return }
+        if event.phase == .began { horizontalDistance = 0; turnedForGesture = false }
+        guard abs(event.scrollingDeltaX) > abs(event.scrollingDeltaY) else { return }
+        if event.hasPreciseScrollingDeltas {
+            horizontalDistance += event.scrollingDeltaX
+            if !turnedForGesture, abs(horizontalDistance) >= 40 {
+                turn(horizontalDistance < 0 ? 1 : -1, at: event.timestamp)
+                turnedForGesture = true
+            }
+        } else if event.scrollingDeltaX != 0 {
+            turn(event.scrollingDeltaX < 0 ? 1 : -1, at: event.timestamp)
+        }
+        if event.phase == .ended || event.phase == .cancelled { horizontalDistance = 0; turnedForGesture = false }
+    }
+
+    override func swipe(with event: NSEvent) {
+        if event.deltaX != 0 { turn(event.deltaX < 0 ? 1 : -1, at: event.timestamp) }
+    }
+
+    private func turn(_ offset: Int, at time: TimeInterval) {
+        guard time - lastTurn > 0.22 else { return }
+        lastTurn = time
+        onPage?(offset)
     }
 }
 
@@ -235,19 +327,19 @@ private final class FolderAppButton: NSButton {
             NSColor.labelColor.withAlphaComponent(isHighlighted ? 0.18 : focused ? 0.12 : 0.07).setFill()
             NSBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 1), xRadius: 10, yRadius: 10).fill()
         }
-        image?.draw(in: NSRect(x: (bounds.width - 56) / 2, y: 2, width: 56, height: 56),
+        image?.draw(in: NSRect(x: (bounds.width - 48) / 2, y: 2, width: 48, height: 48),
                     from: .zero, operation: .sourceOver, fraction: isHighlighted ? 0.75 : 1,
                     respectFlipped: true, hints: [.interpolation: NSImageInterpolation.high])
         if NativeApplications.isRunning(item) {
             NSColor.secondaryLabelColor.setFill()
-            NSBezierPath(ovalIn: NSRect(x: bounds.midX - 1.5, y: 62, width: 3, height: 3)).fill()
+            NSBezierPath(ovalIn: NSRect(x: bounds.midX - 1.5, y: 55, width: 3, height: 3)).fill()
         }
         let paragraph = NSMutableParagraphStyle()
         paragraph.alignment = .center
-        paragraph.lineBreakMode = .byTruncatingTail
-        (title as NSString).draw(in: NSRect(x: 4, y: 73, width: bounds.width - 8, height: 18),
-            withAttributes: [.font: NSFont.systemFont(ofSize: 12), .foregroundColor: NSColor.labelColor,
-                             .paragraphStyle: paragraph])
+        paragraph.lineBreakMode = .byWordWrapping
+        (title as NSString).draw(with: NSRect(x: 4, y: 65, width: bounds.width - 8, height: 30),
+            options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine], attributes: [.font: NSFont.systemFont(ofSize: 12), .foregroundColor: NSColor.labelColor,
+                             .paragraphStyle: paragraph], context: nil)
     }
 }
 #endif

@@ -6,6 +6,55 @@ import XCTest
 
 @MainActor
 final class NativeDockDragTests: XCTestCase {
+    func testFolderPagesKeepSizeAndClampAfterRemovingLastPage() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".json")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let store = DockStore(fileURL: url)
+        var folder = DockItem(kind: .folder, title: "Paged folder", symbol: "folder")
+        folder.children = (1...19).map { NativeApplications.item(for: URL(fileURLWithPath: "/Applications/App \($0).app")) }
+        var profile = DockProfile(name: "Pages", symbol: "folder", color: "green", items: [folder])
+        profile.appearance.autoHide = false
+        try store.create(profile)
+        let application = MacApplication()
+        let dock = NativeDockController(profileID: profile.id, store: store, application: application)
+        defer { dock.close() }
+        dock.showWindow(nil)
+        dock.open(folder)
+        let controller = try XCTUnwrap(dock.folderController)
+        let size = controller.view.frame.size
+        func buttons(in view: NSView) -> [NSButton] {
+            if let button = view as? NSButton { return [button] }
+            return view.subviews.flatMap { buttons(in: $0) }
+        }
+        func apps() -> [NSButton] { buttons(in: controller.view).filter { $0.title.hasPrefix("App ") } }
+        func arrow(_ name: String) throws -> NSButton {
+            try XCTUnwrap(buttons(in: controller.view).first { $0.accessibilityLabel() == name })
+        }
+        XCTAssertEqual(apps().map(\.title), (1...9).map { "App \($0)" })
+        XCTAssertEqual(Set(apps().map { $0.frame.minX }).count, 3)
+        XCTAssertFalse(try arrow("Previous page").isEnabled)
+        try arrow("Next page").performClick(nil)
+        XCTAssertEqual(apps().map(\.title), (10...18).map { "App \($0)" })
+        XCTAssertEqual(controller.view.frame.size, size)
+        try arrow("Next page").performClick(nil)
+        XCTAssertEqual(apps().map(\.title), ["App 19"])
+        XCTAssertFalse(try arrow("Next page").isEnabled)
+        XCTAssertEqual(controller.view.frame.size, size)
+        folder.children?.removeLast()
+        try store.updateItem(folder)
+        XCTAssertEqual(apps().map(\.title), (10...18).map { "App \($0)" })
+        XCTAssertEqual(controller.view.frame.size, size)
+        try arrow("Previous page").performClick(nil)
+        XCTAssertEqual(apps().map(\.title), (1...9).map { "App \($0)" })
+        folder.children = Array((folder.children ?? []).prefix(5))
+        try store.updateItem(folder)
+        XCTAssertEqual(apps().count, 5)
+        XCTAssertEqual(Set(apps().map { $0.frame.minX }).count, 3)
+        XCTAssertEqual(Set(apps().map { $0.frame.minY }).count, 2)
+        XCTAssertLessThan(controller.view.frame.height, size.height)
+        XCTAssertFalse(buttons(in: controller.view).contains { $0.accessibilityLabel() == "Next page" })
+    }
+
     func testClickingAnotherFolderSwitchesImmediatelyAndSameFolderCloses() throws {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".json")
         defer { try? FileManager.default.removeItem(at: url) }
