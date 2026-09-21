@@ -352,20 +352,36 @@ enum NativeApplications {
             return NSWorkspace.shared.icon(forFile: url.path)
         }
         if item.kind == .folder {
-            let children = Array((item.children ?? []).prefix(4))
+            let children = Array((item.children ?? []).prefix(9))
             let icons = children.map { icon(for: $0) }
+            let overflow = max(0, (item.children?.count ?? 0) - 8)
             return NSImage(size: NSSize(width: 64, height: 64), flipped: false) { bounds in
                 if icons.isEmpty {
                     NSImage(systemSymbolName: "folder", accessibilityDescription: item.title)?.draw(in: bounds.insetBy(dx: 16, dy: 16))
                 }
-                let side: CGFloat = icons.count > 2 ? 18 : icons.count == 1 ? 28 : 23
+                let columns = icons.count > 4 ? 3 : min(2, icons.count)
+                let rows = icons.isEmpty ? 0 : (icons.count + columns - 1) / columns
+                let side: CGFloat = icons.count > 4 ? 14 : icons.count > 2 ? 18 : icons.count == 1 ? 28 : 23
                 let gap: CGFloat = 3
                 for (index, image) in icons.enumerated() {
-                    let columns = min(2, icons.count)
                     let width = CGFloat(columns) * side + CGFloat(columns - 1) * gap
-                    let x = (bounds.width - width) / 2 + CGFloat(index % 2) * (side + gap)
-                    let y: CGFloat = icons.count > 2 ? 34 - CGFloat(index / 2) * (side + gap) : (bounds.height - side) / 2
-                    image.draw(in: NSRect(x: x, y: y, width: side, height: side))
+                    let height = CGFloat(rows) * side + CGFloat(rows - 1) * gap
+                    let x = (bounds.width - width) / 2 + CGFloat(index % columns) * (side + gap)
+                    let y = (bounds.height + height) / 2 - side - CGFloat(index / columns) * (side + gap)
+                    let rect = NSRect(x: x, y: y, width: side, height: side)
+                    if index == 8, overflow > 1 {
+                        NSColor.labelColor.withAlphaComponent(0.12).setFill()
+                        NSBezierPath(roundedRect: rect, xRadius: 3, yRadius: 3).fill()
+                        let text = "+\(overflow)" as NSString
+                        let attributes: [NSAttributedString.Key: Any] = [
+                            .font: NSFont.systemFont(ofSize: 7, weight: .semibold),
+                            .foregroundColor: NSColor.labelColor
+                        ]
+                        let size = text.size(withAttributes: attributes)
+                        text.draw(at: NSPoint(x: rect.midX - size.width / 2, y: rect.midY - size.height / 2), withAttributes: attributes)
+                    } else {
+                        image.draw(in: rect)
+                    }
                 }
                 return true
             }
