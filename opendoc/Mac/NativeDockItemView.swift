@@ -21,8 +21,9 @@ final class NativeDockItemView: FlippedNativeView {
     private var icon: NSImage
     private var folderGlass: NSView?
     private let applicationArtwork = NSImageView()
+    private let artworkHost = NSView()
     var animatesArtwork = false
-    var animationView: NSView { folderGlass ?? (item.kind == .widget || item.kind == .spacer ? self : applicationArtwork) }
+    var animationView: NSView { item.kind == .widget || item.kind == .spacer ? self : artworkHost }
     private let folderPreview = NSImageView()
     private var grouping = false { didSet { needsDisplay = true } }
 
@@ -35,9 +36,14 @@ final class NativeDockItemView: FlippedNativeView {
         super.init(frame: .zero)
         toolTip = item.title
         wantsLayer = true
+        clipsToBounds = false
+        artworkHost.wantsLayer = true
+        artworkHost.layerContentsRedrawPolicy = .onSetNeedsDisplay
+        artworkHost.clipsToBounds = false
+        addSubview(artworkHost)
         applicationArtwork.imageScaling = .scaleProportionallyUpOrDown
         applicationArtwork.wantsLayer = true
-        addSubview(applicationArtwork)
+        artworkHost.addSubview(applicationArtwork)
         updateFolderGlass()
         refreshIfNeeded(at: Date())
         setAccessibilityElement(item.kind != .spacer)
@@ -93,7 +99,7 @@ final class NativeDockItemView: FlippedNativeView {
                 folderPreview.layer?.borderWidth = 1
                 folderPreview.layer?.borderColor = NSColor.white.withAlphaComponent(0.2).cgColor
                 let glass = DockGlassRoot.makeFolderMaterial(containing: folderPreview)
-                addSubview(glass)
+                artworkHost.addSubview(glass)
                 folderGlass = glass
             }
             folderPreview.image = icon
@@ -107,6 +113,7 @@ final class NativeDockItemView: FlippedNativeView {
     func resetArtwork() {
         animatesArtwork = false
         animationView.layer?.removeAllAnimations()
+        animationView.layer?.transform = CATransform3DIdentity
         animationView.alphaValue = 1
         needsLayout = true
         layoutSubtreeIfNeeded()
@@ -124,8 +131,9 @@ final class NativeDockItemView: FlippedNativeView {
         guard !animatesArtwork else { return }
         let side = min(iconSize, bounds.width - 2, bounds.height - 5)
         let rect = NSRect(x: (bounds.width - side) / 2, y: (bounds.height - 5 - side) / 2, width: side, height: side)
-        applicationArtwork.frame = rect
-        folderGlass?.frame = rect
+        artworkHost.frame = rect
+        applicationArtwork.frame = artworkHost.bounds
+        folderGlass?.frame = artworkHost.bounds
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {

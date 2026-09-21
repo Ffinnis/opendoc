@@ -12,7 +12,6 @@ final class NativeDockMagnification: NSWindowController, NSMenuDelegate {
     private let root: NSView
     private let originalRootFrame: NSRect
     private let originalAutoresizing: NSView.AutoresizingMask
-    private var clipping: [(NSView, Bool)] = []
     private var restored = false
     private var hitRects: [NSRect] {
         tiles.indices.map { NativeDockWave.hitRect(artwork: visibleFrame(at: $0), tileWidth: widths[$0]) }
@@ -62,9 +61,8 @@ final class NativeDockMagnification: NSWindowController, NSMenuDelegate {
         surface.layer?.masksToBounds = false
         surface.appearance = dock.window?.contentView?.effectiveAppearance
         restingBar = NSRect(x: parentFrame.minX - frame.minX, y: 0, width: bar.width, height: bar.height)
-        // Preserve the full material hierarchy, including the folder glass's
-        // original parent. A sibling glass view in another window is not an
-        // equivalent rendering of a folder embedded in the dock's material.
+        // Keep the original row and its artwork hosts. The shelf stays behind
+        // them; opening the larger window never substitutes another renderer.
         dock.window?.contentView = NSView(frame: originalRootFrame)
         root.autoresizingMask = []
         root.frame = restingBar
@@ -76,22 +74,18 @@ final class NativeDockMagnification: NSWindowController, NSMenuDelegate {
             originalArtworkFrames.append(view.frame)
             baseRects.append(view.convert(view.bounds, to: surface))
             tile.animatesArtwork = true
-            // The expanded child window supplies headroom. Keep the scroll view
-            // and glass hierarchy intact, allowing artwork to lift above it.
-            var ancestor: NSView? = view.superview
-            while let current = ancestor, current !== surface {
-                if !clipping.contains(where: { $0.0 === current }) {
-                    clipping.append((current, current.clipsToBounds))
-                    current.clipsToBounds = false
-                }
-                ancestor = current.superview
-            }
+
         }
         hoverLabel.isHidden = true
         surface.addSubview(hoverLabel)
-        update(at: NSEvent.mouseLocation, animated: false, magnified: false)
         dock.window?.addChildWindow(panel, ordered: .above)
         panel.orderFrontRegardless()
+        // AppKit synchronizes backing-layer geometry on the first display in a
+        // new window. Finish that synchronization before applying hover transforms.
+        surface.layoutSubtreeIfNeeded()
+        panel.displayIfNeeded()
+        CATransaction.flush()
+        update(at: NSEvent.mouseLocation, animated: false, magnified: false)
     }
     var hasVisibleContent: Bool {
         !tiles.isEmpty && baseRects.allSatisfy { $0.width > 0 && $0.height > 0 && $0.intersects(surface.bounds) }
@@ -103,10 +97,10 @@ final class NativeDockMagnification: NSWindowController, NSMenuDelegate {
         restored = true
         for (index, tile) in tiles.enumerated() {
             tile.animationView.layer?.removeAllAnimations()
+            tile.animationView.layer?.transform = CATransform3DIdentity
             tile.animationView.frame = originalArtworkFrames[index]
             tile.resetArtwork()
         }
-        clipping.forEach { $0.0.clipsToBounds = $0.1 }
         root.removeFromSuperview()
         root.autoresizingMask = originalAutoresizing
         dock?.window?.contentView = root
@@ -127,7 +121,7 @@ final class NativeDockMagnification: NSWindowController, NSMenuDelegate {
     }
     private func visibleFrame(at index: Int) -> NSRect {
         let view = tiles[index].animationView
-        let frame = view.layer?.presentation()?.frame ?? view.frame
+        let frame = view.layer?.presentation()?.frame ?? view.layer?.frame ?? view.frame
         return view.superview?.convert(frame, to: surface) ?? frame
     }
     func updatePointerRouting(at screenPoint: NSPoint) {
@@ -149,9 +143,12 @@ final class NativeDockMagnification: NSWindowController, NSMenuDelegate {
         if !animated || NativeMotion.reducesMotion { duration = 0 }
         else if !magnified { duration = Self.exitDuration; entryUntil = 0 }
         else { duration = max(NativeDockWave.trackingDuration, entryUntil - now) }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
         for index in tiles.indices {
             moveArtwork(at: index, to: frames[index], duration: duration)
         }
+        CATransaction.commit()
         updatePointerRouting(at: screenPoint)
         let point = window.convertPoint(fromScreen: screenPoint)
         let title = tooltipTitle(at: point)
@@ -166,18 +163,9 @@ final class NativeDockMagnification: NSWindowController, NSMenuDelegate {
     }
     private func moveArtwork(at index: Int, to frame: NSRect, duration: TimeInterval) {
         let view = tiles[index].animationView
-        guard let parent = view.superview else { return }
+        guard let parent = view.superview, let layer = view.layer else { return }
         let destination = parent.convert(frame, from: surface)
-        guard view.frame != destination || duration == 0 else { return }
-        if duration == 0 {
-            view.layer?.removeAllAnimations()
-            view.frame = destination
-            view.layoutSubtreeIfNeeded()
-        } else {
-            NativeMotion.animate(duration, timingFunction: NativeDockWave.timingFunction) {
-                view.animator().frame = destination
-            }
-        }
+        NativeDockWave.transform(layer, from: originalArtworkFrames[index], to: destination, duration: duration)
     }
 
     func popoverAnchor(for itemID: UUID) -> (view: NSView, rect: NSRect)? {

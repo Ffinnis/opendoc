@@ -65,6 +65,36 @@ enum NativeDockWave {
         return CGRect(x: artwork.midX - width / 2, y: 0, width: width, height: artwork.maxY + 3)
     }
 
+    /// Animate a fixed-size host, not the effect view's frame. Its native glass
+    /// mask and image layout remain unchanged while the compositor scales both.
+    static func transform(_ layer: CALayer, from base: CGRect, to target: CGRect, duration: TimeInterval) {
+        guard base.width > 0, base.height > 0 else { return }
+        let scaleX = target.width / base.width
+        let scaleY = target.height / base.height
+        let transform = CATransform3DMakeAffineTransform(CGAffineTransform(
+            a: scaleX, b: 0, c: 0, d: scaleY,
+            tx: target.minX - base.minX + (scaleX - 1) * base.width * layer.anchorPoint.x,
+            ty: target.minY - base.minY + (scaleY - 1) * base.height * layer.anchorPoint.y))
+        guard !CATransform3DEqualToTransform(layer.transform, transform) || duration == 0 else { return }
+        let previous = layer.presentation()?.transform
+            ?? ((layer.animation(forKey: "dockArtworkTransform") as? CABasicAnimation)?.fromValue as? NSValue)?.caTransform3DValue
+            ?? layer.transform
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        layer.transform = transform
+        if duration > 0 {
+            let animation = CABasicAnimation(keyPath: "transform")
+            animation.fromValue = NSValue(caTransform3D: previous)
+            animation.toValue = NSValue(caTransform3D: transform)
+            animation.duration = duration
+            animation.timingFunction = timingFunction
+            layer.add(animation, forKey: "dockArtworkTransform")
+        } else {
+            layer.removeAnimation(forKey: "dockArtworkTransform")
+        }
+        CATransaction.commit()
+    }
+
     static var timingFunction: CAMediaTimingFunction { CAMediaTimingFunction(controlPoints: 0.22, 0.65, 0.3, 1) }
 }
 #endif

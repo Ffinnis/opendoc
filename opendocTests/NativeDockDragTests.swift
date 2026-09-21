@@ -1,5 +1,6 @@
 #if os(macOS)
 import AppKit
+import QuartzCore
 import XCTest
 @testable import opendoc
 
@@ -98,13 +99,32 @@ final class NativeDockDragTests: XCTestCase {
         let views = tiles(in: root)
         let originalFrames = views.map { $0.animationView.frame }
         let originalParents = views.map { $0.animationView.superview }
+        let folderTile = try XCTUnwrap(views.first { $0.item.id == folder.id })
+        let host = folderTile.animationView
+        let contentFrames = host.subviews.map(\.frame)
         for _ in 0..<3 {
             controller.previewMagnification()
             let overlay = try XCTUnwrap(controller.window?.childWindows?.first)
             let magnifier = try XCTUnwrap(overlay.windowController as? NativeDockMagnification)
             let anchor = try XCTUnwrap(magnifier.popoverAnchor(for: folder.id))
             let point = overlay.convertPoint(toScreen: NSPoint(x: anchor.rect.midX, y: anchor.rect.midY))
-            magnifier.update(at: point)
+            magnifier.update(at: point, animated: false)
+            CATransaction.flush()
+            RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+            let lifted = try XCTUnwrap(magnifier.popoverAnchor(for: folder.id)).rect
+            XCTAssertGreaterThan(lifted.maxY, root.frame.maxY, "The folder must visibly rise beyond the shelf")
+            var ancestor = host.superview
+            while let view = ancestor, view !== overlay.contentView {
+                XCTAssertFalse(view is NSClipView)
+                if #available(macOS 26.0, *) { XCTAssertFalse(view is NSGlassEffectView) }
+                XCTAssertFalse(view.clipsToBounds)
+                ancestor = view.superview
+            }
+            XCTAssertEqual(host.subviews.map(\.frame), contentFrames, "Magnification must not relayout folder glass or artwork")
+            for offset in [-12.0, 15.0, -5.0, 0.0] {
+                magnifier.update(at: NSPoint(x: point.x + offset, y: point.y))
+                XCTAssertEqual(host.subviews.map(\.frame), contentFrames)
+            }
             RunLoop.main.run(until: Date().addingTimeInterval(0.05))
             magnifier.update(at: point, magnified: false)
             RunLoop.main.run(until: Date().addingTimeInterval(0.2))

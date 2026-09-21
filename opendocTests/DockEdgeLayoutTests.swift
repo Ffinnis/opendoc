@@ -5,6 +5,58 @@ import QuartzCore
 @testable import opendoc
 
 final class DockEdgeLayoutTests: XCTestCase {
+    @MainActor
+    func testFittingRowHasNoGlassOrScrollClipAncestor() {
+        let root = DockGlassRoot(frame: NSRect(x: 0, y: 0, width: 400, height: 100))
+        let row = FlippedNativeView(frame: NSRect(x: 0, y: 0, width: 300, height: 100))
+        root.setDocumentView(row)
+        root.layoutSubtreeIfNeeded()
+        XCTAssertTrue(row.superview === root)
+        XCTAssertFalse(row.clipsToBounds)
+        XCTAssertFalse(root.clipsToBounds)
+        XCTAssertNil(root.scroll.documentView)
+
+        root.setFrameSize(NSSize(width: 200, height: 100))
+        root.needsLayout = true
+        root.layoutSubtreeIfNeeded()
+        XCTAssertTrue(root.scroll.documentView === row, "Overflow must still scroll and clip widgets")
+        XCTAssertTrue(row.superview is NSClipView)
+        XCTAssertFalse(root.scroll.isHidden)
+
+        root.setFrameSize(NSSize(width: 400, height: 100))
+        root.needsLayout = true
+        root.layoutSubtreeIfNeeded()
+        XCTAssertTrue(row.superview === root)
+        XCTAssertNil(root.scroll.documentView)
+        XCTAssertEqual(row.frame.origin, .zero)
+    }
+
+    func testHostTransformMovesArtworkWithoutResizingItsBounds() throws {
+        for anchor in [CGPoint.zero, CGPoint(x: 0.5, y: 0.5)] {
+            let layer = CALayer()
+            layer.anchorPoint = anchor
+            let base = CGRect(x: 12, y: 5, width: 62, height: 62)
+            layer.frame = base
+            let target = CGRect(x: 8, y: -20, width: 78, height: 78)
+            NativeDockWave.transform(layer, from: base, to: target, duration: 0)
+            XCTAssertEqual(layer.bounds.size, base.size)
+            XCTAssertEqual(layer.frame.minX, target.minX, accuracy: 0.001)
+            XCTAssertEqual(layer.frame.minY, target.minY, accuracy: 0.001)
+            XCTAssertEqual(layer.frame.width, target.width, accuracy: 0.001)
+            NativeDockWave.transform(layer, from: base, to: base, duration: 0)
+            XCTAssertTrue(CATransform3DIsIdentity(layer.transform))
+            XCTAssertEqual(layer.frame, base)
+
+            NativeDockWave.transform(layer, from: base, to: target, duration: 0.16)
+            NativeDockWave.transform(layer, from: base, to: target.offsetBy(dx: 2, dy: 0), duration: 0.085)
+            let animation = try XCTUnwrap(layer.animation(forKey: "dockArtworkTransform") as? CABasicAnimation)
+            let from = try XCTUnwrap(animation.fromValue as? NSValue).caTransform3DValue
+            XCTAssertTrue(CATransform3DIsIdentity(from), "Retargeting before the first display commit must retain the visible start")
+            NativeDockWave.transform(layer, from: base, to: base, duration: 0)
+            XCTAssertNil(layer.animation(forKey: "dockArtworkTransform"))
+        }
+    }
+
     func testEdgeWidgetsAndShelfStayStationaryDuringHover() {
         let base = [CGRect(x: 128, y: 6, width: 126, height: 72),
                     CGRect(x: 260, y: 9, width: 62, height: 62),

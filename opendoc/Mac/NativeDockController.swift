@@ -221,9 +221,7 @@ final class NativeDockController: NSWindowController, NSMenuDelegate {
         offset += 38
         contentSize = vertical ? NSSize(width: thickness, height: offset) : NSSize(width: offset, height: thickness)
         dockContent.frame = NSRect(origin: .zero, size: contentSize)
-        if root.scroll.documentView !== dockContent { root.scroll.documentView = dockContent }
-        root.scroll.hasHorizontalScroller = false
-        root.scroll.hasVerticalScroller = false
+        root.setDocumentView(dockContent)
         positionPanel(animated: window?.isVisible == true && !hidden)
         root.autoHide = profile.appearance.autoHide
     }
@@ -648,6 +646,7 @@ final class DockGlassRoot: NSView {
     weak var controller: NativeDockController?
     let scroll = NSScrollView()
     private let material: NSView
+    private var document: NSView?
     private var tracking: NSTrackingArea?
     var autoHide = false {
         didSet {
@@ -693,22 +692,44 @@ final class DockGlassRoot: NSView {
     }
 
     override init(frame frameRect: NSRect) {
-        material = Self.makeMaterial(containing: scroll)
+        material = Self.makeMaterial(containing: NSView())
         super.init(frame: frameRect)
         scroll.drawsBackground = false
         scroll.borderType = .noBorder
         scroll.horizontalScrollElasticity = .none
         scroll.verticalScrollElasticity = .none
         addSubview(material)
+        addSubview(scroll)
+        clipsToBounds = false
+        scroll.hasHorizontalScroller = false
+        scroll.hasVerticalScroller = false
         material.autoresizingMask = [.width, .height]
         setAccessibilityElement(true)
         setAccessibilityRole(.group)
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
+    func setDocumentView(_ view: NSView) {
+        document = view
+        needsLayout = true
+    }
+
     override func layout() {
         super.layout()
         material.frame = bounds
-        scroll.frame = material.bounds
+        scroll.frame = bounds
+        guard let document else { return }
+        let overflows = document.frame.width > bounds.width + 0.5 || document.frame.height > bounds.height + 0.5
+        scroll.isHidden = !overflows
+        if overflows {
+            if scroll.documentView !== document { scroll.documentView = document }
+        } else {
+            // The glass's mask and NSClipView both clip lifted icons. A row that
+            // fits lives above the shelf from the start, not in either container.
+            if scroll.documentView === document { scroll.documentView = nil }
+            if document.superview !== self { addSubview(document) }
+            document.setFrameOrigin(.zero)
+            document.clipsToBounds = false
+        }
     }
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
