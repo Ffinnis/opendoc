@@ -20,6 +20,8 @@
 	<integer>86400</integer>
 	<key>SUSendProfileInfo</key>
 	<false/>
+	<key>SUVerifyUpdateBeforeExtraction</key>
+	<true/>
 	<key>SURequireSignedFeed</key>
 	<true/>
 </dict>

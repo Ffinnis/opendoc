@@ -57,7 +57,7 @@ def validate(directory, tag):
             raise ValueError("App identity does not match the release")
         if info["CFBundleVersion"] != version:
             raise ValueError("Feed build number does not match the app")
-        for field in ["SUFeedURL", "SUPublicEDKey", "SURequireSignedFeed"]:
+        for field in ["SUFeedURL", "SUPublicEDKey", "SURequireSignedFeed", "SUVerifyUpdateBeforeExtraction"]:
             if info[field] != expected[field]:
                 raise ValueError(f"App has an unexpected {field}")
         subprocess.run(["codesign", "--verify", "--deep", "--strict", str(app)], check=True)

@@ -1,5 +1,6 @@
 """Exercise public-key verification without network access or private keys."""
 import importlib.util
+import plistlib
 from pathlib import Path
 import subprocess
 import tempfile
@@ -12,6 +13,12 @@ spec.loader.exec_module(validation)
 
 
 class SignedFeedTests(unittest.TestCase):
+    def test_signed_feed_configuration_allows_sparkle_startup(self):
+        config = plistlib.loads((ROOT / "Configuration/MacInfo.plist").read_bytes())
+        self.assertTrue(config["SURequireSignedFeed"])
+        self.assertTrue(config["SUVerifyUpdateBeforeExtraction"])
+        self.assertTrue(config["SUPublicEDKey"])
+
     def test_published_bootstrap_feed_verifies(self):
         validation.verify_feed(ROOT / "Updates/appcast.xml")
 
