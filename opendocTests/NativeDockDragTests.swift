@@ -69,6 +69,38 @@ final class NativeDockDragTests: XCTestCase {
         }
     }
 
+    func testFolderAppMenuRecognizesEquivalentApplicationURLs() throws {
+        let temporary = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: temporary) }
+        let bundle = try XCTUnwrap(NSRunningApplication.current.bundleURL)
+        let alias = temporary.appendingPathComponent("Linked Test App.app")
+        try FileManager.default.createSymbolicLink(at: alias, withDestinationURL: bundle)
+        let store = DockStore(fileURL: temporary.appendingPathComponent("workspace.json"))
+        var folder = DockItem(kind: .folder, title: "Equivalent URLs", symbol: "folder")
+        let withoutSlash = bundle.absoluteString.hasSuffix("/") ? String(bundle.absoluteString.dropLast()) : bundle.absoluteString
+        folder.children = [withoutSlash, withoutSlash + "/", alias.absoluteString].enumerated().map { index, address in
+            DockItem(kind: .application, title: "Running app \(index)", symbol: "app", url: address)
+        }
+        let profile = DockProfile(name: "Application identity", symbol: "folder", color: "green", items: [folder])
+        try store.create(profile)
+        let application = MacApplication()
+        let dock = NativeDockController(profileID: profile.id, store: store, application: application)
+        defer { dock.close() }
+        let controller = NativeFolderController(folderID: folder.id, dock: dock)
+        // Menus resolve their item through the same identifiers used by the buttons.
+        for item in try XCTUnwrap(folder.children) {
+            XCTAssertTrue(NativeApplications.isRunning(item), "The running dot must agree with the menu")
+            let menu = NSMenu()
+            menu.identifier = .init(item.id.uuidString)
+            controller.menuNeedsUpdate(menu)
+            for actions in [menu, dock.menu(for: item)] {
+                XCTAssertNotNil(actions.item(withTitle: "Quit \(item.title)"), item.url ?? "")
+                XCTAssertNotNil(actions.item(withTitle: NSRunningApplication.current.isHidden ? "Show" : "Hide"))
+            }
+        }
+    }
+
     func testFolderPagesKeepSizeAndClampAfterRemovingLastPage() throws {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".json")
         defer { try? FileManager.default.removeItem(at: url) }
