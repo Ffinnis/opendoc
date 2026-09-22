@@ -44,6 +44,7 @@ function ScrubText({ children, className = "" }) {
 }
 
 const repo = "https://github.com/Ffinnis/opendoc";
+const productHunt = "https://www.producthunt.com/products/open-doc?launch=open-doc";
 const guide = `${repo}/blob/main/docs/Using-Open-Doc.md`;
 const cliGuide = `${repo}/blob/main/Examples/Agent-CLI.md`;
 const assetUrl = (name) => `${import.meta.env.BASE_URL}assets/${name}`;
@@ -185,6 +186,7 @@ function Hero({ paused, onToggleMotion }) {
         <nav aria-label="Main navigation">
           <a href="#features">Features</a>
           <a href={guide}>Read guide</a>
+          <a href={productHunt}>Product Hunt</a>
         </nav>
         <div className="header-right">
           <button
@@ -475,6 +477,7 @@ function Closing() {
         <Brand />
         <nav aria-label="Footer navigation">
           <a href={repo}>GitHub</a>
+          <a href={productHunt}>Product Hunt</a>
           <a href={`${repo}/blob/main/LICENSE`}>MIT license</a>
           <a href={`${repo}/issues`}>Feedback</a>
         </nav>
