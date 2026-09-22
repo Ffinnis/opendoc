@@ -1,0 +1,6 @@
+node_modules/
+dist/
+.qa/
+
+# Fontshare binaries are fetched per checkout, not redistributed in Git.
+public/fonts/*.woff2

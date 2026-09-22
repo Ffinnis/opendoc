@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#f0f3ef" />
+    <meta name="description" content="Make your Mac dock your own. Organize apps in folders, add useful widgets, and arrange independent docks with Open Doc. Free and open source." />
+    <meta property="og:title" content="Open Doc | A dock of your own." />
+    <meta property="og:description" content="Apps, folders, and useful widgets. A dock that works the way you do. Free and open source for macOS." />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://ffinnis.github.io/opendoc/" />
+    <link rel="canonical" href="https://ffinnis.github.io/opendoc/" />
+    <link rel="icon" type="image/png" href="/assets/opendoc.png" />
+    <link rel="preload" as="image" href="/assets/coast.webp" fetchpriority="high" />
+    <script>
+      try {
+        const theme = localStorage.getItem('opendoc-theme');
+        if (theme === 'dark' || theme === 'light') document.documentElement.dataset.theme = theme;
+      } catch {}
+    </script>
+    <title>Open Doc | A dock of your own.</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>

@@ -16,3 +16,6 @@ Configuration/LocalSigning.xcconfig
 
 __pycache__/
 *.pyc
+
+# Local HyperFrames product demo
+/videos/opendoc-demo/
