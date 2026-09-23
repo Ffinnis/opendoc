@@ -6,7 +6,9 @@ on:
     paths:
       - 'website/**'
       - '.github/workflows/pages.yml'
+      - '.github/workflows/updates.yml'
   workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
@@ -17,8 +19,8 @@ concurrency:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
+    runs-on: macos-26
+    timeout-minutes: 20
     permissions:
       contents: read
       pages: read
@@ -30,6 +32,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
+          ref: main
           persist-credentials: false
       - uses: actions/setup-node@v6
         with:
@@ -41,7 +44,23 @@ jobs:
         run: npm ci
       - name: Build and pre-render
         run: npm run build
-      - uses: actions/upload-pages-artifact@v3
+      - name: Validate and include the latest stable update feed
+        working-directory: .
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p build/release
+          tag=$(gh release list --repo Ffinnis/opendoc --exclude-drafts --exclude-pre-releases --limit 1 --json tagName --jq '.[0].tagName // empty')
+          if [ -z "$tag" ]; then
+            python3 Scripts/validate-release.py --feed Updates/appcast.xml
+            cp Updates/appcast.xml website/dist/appcast.xml
+          else
+            tag=$(gh api repos/Ffinnis/opendoc/releases/latest --jq .tag_name)
+            gh release download "$tag" --repo Ffinnis/opendoc --pattern appcast.xml --pattern 'OpenDoc-*.zip' --dir build/release
+            python3 Scripts/validate-release.py build/release "$tag"
+            cp build/release/appcast.xml website/dist/appcast.xml
+          fi
+      - uses: actions/upload-pages-artifact@v4
         with:
           path: website/dist
 

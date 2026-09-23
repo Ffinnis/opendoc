@@ -53,7 +53,7 @@ Inspect the queue at any time:
 python3 Scripts/release.py status
 ```
 
-Check the release notes for clear descriptions of user-visible changes. Then check the **Deploy updates** workflow. A release page alone does not confirm that automatic updates are available. The workflow must validate the files and finish deploying the feed. Prereleases stay out of the stable feed.
+Check the release notes for clear descriptions of user-visible changes. Then check the **Deploy updates** workflow. A release page alone does not confirm that automatic updates are available. The workflow must validate the files and finish deploying the feed. It calls the shared **Deploy website** workflow so the landing page and signed feed are published in one Pages artifact. Website deployments also validate and include the current stable feed. Prereleases stay out of the stable feed.
 
 ## Retry or cancel
 

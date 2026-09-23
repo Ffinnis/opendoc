@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.1.4
+
+- Include the Open Doc app icon in macOS installations, with standard and Retina sizes.
+- Keep the landing page and automatic update feed together when deploying either one.
+
 ## 1.1.3
 
 - App menus inside folders now include Open, Show in Finder, Hide or Show, and Quit. New Window appears when supported. Menus refresh their running state when opened.
