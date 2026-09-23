@@ -56,7 +56,11 @@ jobs:
             cp Updates/appcast.xml website/dist/appcast.xml
           else
             tag=$(gh api repos/Ffinnis/opendoc/releases/latest --jq .tag_name)
-            gh release download "$tag" --repo Ffinnis/opendoc --pattern appcast.xml --pattern 'OpenDoc-*.zip' --dir build/release
+            # The release API can return an empty asset list after publication
+            # even when the uploaded files are already available for download.
+            download="https://github.com/Ffinnis/opendoc/releases/download/$tag"
+            curl --fail --location --retry 3 --retry-delay 2 --max-time 180 "$download/appcast.xml" --output build/release/appcast.xml
+            curl --fail --location --retry 3 --retry-delay 2 --max-time 180 "$download/OpenDoc-${tag#v}.zip" --output "build/release/OpenDoc-${tag#v}.zip"
             python3 Scripts/validate-release.py build/release "$tag"
             cp build/release/appcast.xml website/dist/appcast.xml
           fi
