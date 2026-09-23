@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.2.0
+
+- Create programmable dock widgets using Bash, Node.js, or another local executable. Commands return JSON for the widget's value, detail, and progress bar.
+- Start with Codex and Claude usage presets powered by an installed CodexBar helper.
+- Configure command arguments, refresh intervals, and timeouts in the native widget editor or through the Open Doc CLI. Local execution stays disabled until enabled for the widget.
+- Keep the last successful reading when a command fails, with an error shown in the widget. Command execution runs in the background with time and output limits.
+
 ## 1.1.4
 
 - Include the Open Doc app icon in macOS installations, with standard and Retina sizes.

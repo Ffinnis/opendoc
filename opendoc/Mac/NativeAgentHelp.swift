@@ -6,7 +6,7 @@ enum NativeAgentHelp {
     static let commands = ["state", "schema", "widget.add", "widget.update", "widget.remove", "widget.preview", "dock.update"]
     static let flags = [
         "--input FILE|-": "Read a JSON params object from a file or stdin. Do not wrap it in op/params.",
-        "--dry-run": "Validate add/update/remove without changing the dock. Does not prevent widget.preview from fetching its URL.",
+        "--dry-run": "Validate add/update/remove without changing the dock. Does not prevent widget.preview from fetching its URL or executing an enabled local command.",
         "--if-revision HASH": "Apply only if the state revision still matches. Read state again on conflict.",
         "--help, -h": "Explain this command without connecting to the app.",
         "--json": "With help only: return machine-readable documentation."
@@ -53,8 +53,8 @@ enum NativeAgentHelp {
             required = ["itemID"]; example = ["itemID": "ITEM_UUID"]
             result = "result is the removed widget. --dry-run validates the target without removing it."
         case "widget.preview":
-            description = "Evaluate a custom widget without saving it. Webpage sources fetch the configured HTTPS URL."
-            fields = ["custom": "Required partial custom configuration. Fields: source (local/webpage), endpoint, selector, attribute, refreshInterval (60...3600 seconds), initialState, state, stateDay, resetDaily, renderScript, actions. State contains numbers; actions contain title, script, and optional id."]
+            description = "Evaluate a custom widget without saving it. Webpage sources fetch the configured HTTPS URL. Command sources execute the local program when command.enabled is true, including with --dry-run."
+            fields = ["custom": "Required partial custom configuration. Fields: source (local/webpage/command), command {enabled (default false), executable (absolute path), arguments (string array), timeout (1...25 seconds, default 20)}, endpoint, selector, attribute, refreshInterval (60...3600 seconds), initialState, state, stateDay, resetDaily, renderScript, actions. State contains numbers; actions contain title, script, and optional id."]
             required = ["custom"]
             example = ["custom": ["state": ["count": 3], "renderScript": "return { value: state.count + ' glasses', detail: 'Today', progress: state.count / 8 };"]]
             result = "result contains value, detail, and optional progress (0...1). Code receives state, input.text, input.matches. It has no file/shell/network APIs and stops after 2 seconds. HTML extraction reads returned HTML without site scripts or browser login."

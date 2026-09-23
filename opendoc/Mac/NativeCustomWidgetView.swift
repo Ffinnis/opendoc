@@ -31,6 +31,10 @@ final class NativeCustomWidgetView: NSView {
     private var selectorField: NSTextField?
     private var attributeField: NSTextField?
     private var intervalField: NSPopUpButton?
+    private var executableField: NSTextField?
+    private var argumentsField: NSTextView?
+    private var commandEnabledField: NSButton?
+    private var timeoutField: NSTextField?
     private var stateField: NSTextField!
     private var resetField: NSButton!
     private var renderField: NSTextView!
@@ -108,7 +112,7 @@ final class NativeCustomWidgetView: NSView {
             let button = NativeButton(action.title) { [weak self] in self?.perform(action.id) }
             buttons.addArrangedSubview(button)
         }
-        if item?.custom?.source == .webpage {
+        if let source = item?.custom?.source, source != .local {
             buttons.addArrangedSubview(NativeButton("Refresh") { [weak self] in
                 guard let self, let item else { return }
                 lastError = nil; NativeCustomWidgetData.shared.refresh(item); refreshLive()
@@ -152,24 +156,37 @@ final class NativeCustomWidgetView: NSView {
         scrollToTop = true
         form.arrangedSubviews.forEach { form.removeArrangedSubview($0); $0.removeFromSuperview() }
         actionFields = []; endpointField = nil; selectorField = nil; attributeField = nil; intervalField = nil
+        executableField = nil; argumentsField = nil; commandEnabledField = nil; timeoutField = nil
         let templates = NSPopUpButton()
-        templates.addItems(withTitles: ["Choose a starting point…", "Counter", "Water cups", "Webpage value"])
+        templates.addItems(withTitles: ["Choose a starting point…", "Counter", "Water cups", "Webpage value", "Command JSON", "Codex usage (CodexBar)", "Claude usage (CodexBar)"])
         templates.target = self; templates.action = #selector(chooseTemplate(_:)); templates.setAccessibilityLabel("Widget template")
         add(templates)
         nameField = field("Name", value: draftName)
         sourceField = NSPopUpButton()
-        sourceField.addItems(withTitles: ["Saved state", "Webpage HTML"])
-        sourceField.selectItem(at: draft.source == .local ? 0 : 1)
+        sourceField.addItems(withTitles: ["Saved state", "Webpage HTML", "Local command"])
+        sourceField.selectItem(at: [.local, .webpage, .command].firstIndex(of: draft.source) ?? 0)
         sourceField.target = self; sourceField.action = #selector(changeSource)
         sourceField.setAccessibilityLabel("Widget source"); labelled("Source", sourceField)
         if draft.source == .webpage {
             endpointField = field("Webpage URL", value: draft.endpoint, placeholder: "https://example.com/product")
             selectorField = field("CSS selector", value: draft.selector, placeholder: ".price, #total, div[data-value]")
             attributeField = field("Attribute", value: draft.attribute, placeholder: "Leave empty for element text")
+            help("Reads returned HTML without page scripts or browser login. For JavaScript-loaded values, use the Web value widget with the site's JSON endpoint.")
+        }
+        if draft.source == .command {
+            executableField = field("Executable", value: draft.command.executable, placeholder: "/bin/bash or /opt/homebrew/bin/node")
+            let args = (try? JSONEncoder().encode(draft.command.arguments)).flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
+            argumentsField = code("Arguments (JSON array)", value: args, height: 65)
+            timeoutField = field("Timeout in seconds (1–25)", value: String(Int(draft.command.timeout)))
+            let enabled = NSButton(checkboxWithTitle: "Allow this widget to run the local command", target: nil, action: nil)
+            enabled.state = draft.command.enabled ? .on : .off
+            commandEnabledField = enabled; add(enabled)
+            help("Runs with your Mac account's file and network access when previewed or refreshed. Enable only commands you trust. CodexBar presets require CodexBar and a signed-in account. Node must be installed separately.")
+        }
+        if draft.source != .local {
             let interval = NSPopUpButton(); interval.addItems(withTitles: ["Every minute", "Every 5 minutes", "Every 15 minutes", "Every hour"])
             interval.selectItem(at: [60.0, 300, 900, 3600].firstIndex(of: draft.refreshInterval) ?? 1)
-            interval.setAccessibilityLabel("Page refresh interval"); labelled("Refresh", interval); intervalField = interval
-            help("Reads returned HTML without page scripts or browser login. For JavaScript-loaded values, use the Web value widget with the site's JSON endpoint.")
+            interval.setAccessibilityLabel("Refresh interval"); labelled("Refresh", interval); intervalField = interval
         }
         let state = (try? JSONEncoder().encode(draft.initialState)).flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
         stateField = field("Initial state (JSON)", value: state, placeholder: "{\"count\":0,\"goal\":8}")
@@ -177,7 +194,7 @@ final class NativeCustomWidgetView: NSView {
         resetField = NSButton(checkboxWithTitle: "Reset state each day", target: nil, action: nil)
         resetField.state = draft.resetDaily ? .on : .off; add(resetField)
         renderField = code("Display function", value: draft.renderScript, height: 104)
-        help("Return { value, detail, progress }. Progress is optional, from 0 to 1. Use state for saved numbers, input.text for the first match, and input.matches for all matches.")
+        help("Return { value, detail, progress }. Progress is optional, from 0 to 1. Use state for saved numbers. For commands, JSON.parse(input.text) reads stdout. For webpages, input.text is the first match and input.matches contains all matches.")
         for (index, action) in draft.actions.enumerated() {
             let title = field("Button \(index + 1)", value: action.title)
             let script = code("Button \(index + 1) action", value: action.script, height: 60)
@@ -203,13 +220,16 @@ final class NativeCustomWidgetView: NSView {
         case 1: draft = CustomWidgetConfiguration()
         case 2: draft = .water()
         case 3: draft = .webpage()
+        case 4: draft = .commandTemplate()
+        case 5: draft = .codexBar(provider: "codex"); draftName = "Codex usage"
+        case 6: draft = .codexBar(provider: "claude"); draftName = "Claude usage"
         default: return
         }
         feedback.stringValue = "Template loaded. Preview it, then save."
         feedback.textColor = .secondaryLabelColor; buildForm()
     }
     @objc private func changeSource() {
-        let source: CustomWidgetConfiguration.Source = sourceField.indexOfSelectedItem == 0 ? .local : .webpage
+        let source: CustomWidgetConfiguration.Source = [.local, .webpage, .command][max(0, sourceField.indexOfSelectedItem)]
         do { try readDraft(); draft.source = source; buildForm() } catch { showError(error) }
     }
     private func readDraft() throws {
@@ -222,6 +242,15 @@ final class NativeCustomWidgetView: NSView {
         if let selectorField { draft.selector = selectorField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines) }
         if let attributeField { draft.attribute = attributeField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines) }
         if let intervalField { draft.refreshInterval = [60.0, 300, 900, 3600][max(0, intervalField.indexOfSelectedItem)] }
+        if let executableField { draft.command.executable = executableField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines) }
+        if let argumentsField { draft.command.arguments = try JSONDecoder().decode([String].self, from: Data(argumentsField.string.utf8)) }
+        if let timeoutField {
+            guard let timeout = Double(timeoutField.stringValue), timeout.isFinite, (1...25).contains(timeout) else {
+                throw CustomWidgetError.message("Command timeout must be between 1 and 25 seconds.")
+            }
+            draft.command.timeout = timeout
+        }
+        if let commandEnabledField { draft.command.enabled = commandEnabledField.state == .on }
         draft.actions = actionFields.map { CustomWidgetAction(id: $0.0, title: $0.1.stringValue, script: $0.2.string) }
     }
     private func preview() {

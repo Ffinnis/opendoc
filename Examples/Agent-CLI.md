@@ -107,6 +107,36 @@ JSON
 
 Preview returns the displayed value, detail, and optional progress. A webpage preview may fetch its URL, even with `--dry-run`. It never saves the widget. See [Widgets](../docs/Widgets.md) for script inputs and [USD/RUB](USD-RUB.md) for a webpage example.
 
+## Add a command widget
+
+`schema.customTemplates` includes `command`, `codex`, and `claude`. Each starts with `command.enabled: false`. Enable execution only after reviewing the executable and arguments. For example, use this as the input to `widget.add`, replacing the dock UUID:
+
+```json
+{
+  "dockID": "DOCK_UUID",
+  "kind": "custom",
+  "patch": {
+    "title": "Local metric",
+    "custom": {
+      "source": "command",
+      "command": {
+        "enabled": true,
+        "executable": "/bin/bash",
+        "arguments": ["/absolute/path/metric.sh"],
+        "timeout": 20
+      },
+      "refreshInterval": 300,
+      "renderScript": "return JSON.parse(input.text);",
+      "actions": []
+    }
+  }
+}
+```
+
+The script must print JSON such as `{"value":"72% left","detail":"Quota","progress":0.72}`. Arguments are literal, without shell expansion. Use your installed Node executable to run a `.js` file. Commands have a 64 KiB output limit and a 1–25 second timeout.
+
+`widget.add` and `widget.update` with `--dry-run` validate without executing or saving. **`widget.preview` executes an enabled command, even with `--dry-run`.** Saving an enabled widget allows background refresh to execute it. Commands run with the user's file and network access, separately from the restricted display function. See [Widgets](../docs/Widgets.md#run-bash-node-or-another-local-command) for runtime details.
+
 ## Rules for edits
 
 - Pass the fields directly as JSON with `--input FILE` or `--input -`. Do not wrap them in `op` or `params`.

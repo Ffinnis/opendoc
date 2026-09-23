@@ -14,7 +14,7 @@ Open **Widget Library...** from the dock's settings menu to browse and preview w
 | Battery | Shows your Mac's battery information. |
 | CPU and Memory | Show CPU usage and an estimate of used memory. Memory is not a memory-pressure reading. |
 | Web value | Reads a value from an HTTPS JSON endpoint. |
-| Custom widget | Combines saved counters, JavaScript formatting, progress, and buttons. It can also read webpage HTML. |
+| Custom widget | Combines saved counters, JavaScript formatting, progress, and buttons. Reads webpage HTML or JSON from a local command. |
 
 ## Read a JSON value
 
@@ -57,6 +57,30 @@ The widget reads the HTML returned by the server. It does not run the site's Jav
 
 ## Limits
 
-Web responses are limited to 1 MiB and refresh every 1 to 60 minutes. Custom scripts stop after two seconds, can save up to 32 numeric state entries, and have no file, shell, or network APIs. There is no Node.js runtime. Use the widget's source settings to fetch data.
+Web responses are limited to 1 MiB and refresh every 1 to 60 minutes. JavaScript display functions and button actions stop after two seconds, can save up to 32 numeric state entries, and have no file, shell, or network APIs. Local commands run separately, as described below. Open Doc does not bundle Node.js.
 
 Custom widgets use the app's existing value, detail, progress, and button layout. They cannot add arbitrary UI or embed Apple desktop widgets. Dedicated stock, weather, and media playback integrations are not available.
+
+## Run Bash, Node, or another local command
+
+Add a **Custom widget**, open **Configure**, and choose **Command JSON**, **Codex usage (CodexBar)**, or **Claude usage (CodexBar)**. Review the executable and arguments, check **Allow this widget to run the local command**, then preview and save. Templates start with execution disabled.
+
+Specify an absolute executable path and a JSON array of arguments. Arguments pass directly to the executable without shell expansion. To run a Bash script, use `/bin/bash` with `["/absolute/path/usage.sh"]`. To run JavaScript with Node, select your installed Node executable and use `["/absolute/path/usage.js"]`. Shell pipelines require an explicit shell, for example `/bin/bash` with `["-c", "your pipeline"]`.
+
+Commands run as your Mac account, with access to its files and network. They start in your home directory, receive no stdin, and use a PATH containing `~/.local/bin`, Homebrew, and system directories. Shell startup files are not loaded automatically. Use an absolute Node path for installations managed by nvm. Do not put credentials in widget arguments or scripts, which are saved with workspace backups.
+
+Print one UTF-8 JSON value to stdout. The display function receives that output as `input.text`:
+
+```js
+// usage.js, run with an installed Node executable
+console.log(JSON.stringify({ value: '72% left', detail: 'Example quota', progress: 0.72 }));
+```
+
+```js
+// Widget display function
+return JSON.parse(input.text);
+```
+
+Commands refresh every 1 to 60 minutes, with a configurable timeout of 1 to 25 seconds and a 64 KiB stdout limit. At most two commands run at once. Timeout, excess output, invalid JSON, or a nonzero exit retains the last successful reading and reports an error. Child processes in the command's process group are stopped when the command finishes or exceeds its limits. Commands should complete their work before exiting, not start background services. Diagnostic stderr is discarded; run a failing command in Terminal for details.
+
+The CodexBar presets use its installed helper at `/Applications/CodexBar.app/Contents/Helpers/CodexBarCLI`. Adjust that path if you installed it elsewhere. They request OAuth usage for the selected provider, show the primary quota window when available, and fall back to the secondary window. They display the percentage remaining and time until reset. Sign in to the provider first. If OAuth reports stale credentials while Claude Code works, change `--source` from `oauth` to `cli` in the arguments to use CodexBar’s Claude CLI integration. Open Doc does not store your provider credentials. See [CodexBar's CLI documentation](https://github.com/steipete/CodexBar/blob/main/docs/cli.md).

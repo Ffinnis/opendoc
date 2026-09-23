@@ -7,8 +7,9 @@ struct CustomWidgetAction: Codable, Equatable, Sendable {
 }
 
 struct CustomWidgetConfiguration: Codable, Equatable, Sendable {
-    enum Source: String, Codable, Sendable { case local, webpage }
+    enum Source: String, Codable, Sendable { case local, webpage, command }
     var source: Source = .local
+    var command = WidgetCommandConfiguration()
     var endpoint = ""
     var selector = ""
     var attribute = ""
@@ -24,11 +25,31 @@ struct CustomWidgetConfiguration: Codable, Equatable, Sendable {
         .init(title: "Reset", script: "state.count = 0; return state;")
     ]
 
+    init() {}
+
+    // Older workspaces predate command sources. Never enable local execution on migration.
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        source = try values.decode(Source.self, forKey: .source)
+        command = try values.decodeIfPresent(WidgetCommandConfiguration.self, forKey: .command) ?? .init()
+        endpoint = try values.decode(String.self, forKey: .endpoint)
+        selector = try values.decode(String.self, forKey: .selector)
+        attribute = try values.decode(String.self, forKey: .attribute)
+        refreshInterval = try values.decode(TimeInterval.self, forKey: .refreshInterval)
+        initialState = try values.decode([String: Double].self, forKey: .initialState)
+        state = try values.decode([String: Double].self, forKey: .state)
+        stateDay = try values.decode(String.self, forKey: .stateDay)
+        resetDaily = try values.decode(Bool.self, forKey: .resetDaily)
+        renderScript = try values.decode(String.self, forKey: .renderScript)
+        actions = try values.decode([CustomWidgetAction].self, forKey: .actions)
+    }
+
     nonisolated func effectiveState(day: String) -> [String: Double] {
         resetDaily && stateDay != day ? initialState : state
     }
 
     nonisolated func validate() throws {
+        try command.validate(requireExecutable: source == .command)
         guard endpoint.count <= 4096, selector.count <= 512, attribute.count <= 128,
               refreshInterval.isFinite, (60...3600).contains(refreshInterval),
               !renderScript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
@@ -67,6 +88,36 @@ struct CustomWidgetConfiguration: Codable, Equatable, Sendable {
         var result = Self()
         result.source = .webpage; result.initialState = [:]; result.state = [:]; result.actions = []
         result.renderScript = "return { value: input.text.trim(), detail: 'From webpage' };"
+        return result
+    }
+
+    static func commandTemplate() -> Self {
+        var result = Self()
+        result.source = .command; result.initialState = [:]; result.state = [:]; result.actions = []
+        result.command.executable = "/bin/bash"
+        result.command.arguments = ["-c", "printf '%s\\n' '{\"value\":\"Hello\",\"detail\":\"Command widget\"}'"]
+        result.renderScript = "return JSON.parse(input.text);"
+        return result
+    }
+
+    static func codexBar(provider: String) -> Self {
+        var result = commandTemplate()
+        result.command.executable = "/Applications/CodexBar.app/Contents/Helpers/CodexBarCLI"
+        result.command.arguments = ["usage", "--provider", provider, "--source", "oauth", "--format", "json"]
+        result.renderScript = """
+        const rows = JSON.parse(input.text);
+        const row = rows.find(r => r.provider === '\(provider)');
+        if (!row || row.error || !row.usage) throw new Error('Usage unavailable. Check this account in CodexBar.');
+        const usage = row.usage;
+        const window = usage.primary || usage.secondary;
+        if (!window || typeof window.usedPercent !== 'number') throw new Error('No quota window reported.');
+        const remaining = Math.max(0, Math.min(100, 100 - window.usedPercent));
+        const label = window.windowMinutes === 10080 ? 'Weekly' : window.windowMinutes === 300 ? '5h' : 'Quota';
+        const reset = window.resetsAt ? Date.parse(window.resetsAt) : NaN;
+        const minutes = Math.max(0, Math.ceil((reset - Date.now()) / 60000));
+        const when = Number.isFinite(minutes) ? (minutes >= 1440 ? Math.ceil(minutes / 1440) + 'd' : minutes >= 60 ? Math.floor(minutes / 60) + 'h ' + minutes % 60 + 'm' : minutes + 'm') : '';
+        return { value: Math.round(remaining) + '% left', detail: '\(provider == "claude" ? "Claude" : "Codex") · ' + label + (when ? ' · ' + when : ''), progress: remaining / 100 };
+        """
         return result
     }
 }

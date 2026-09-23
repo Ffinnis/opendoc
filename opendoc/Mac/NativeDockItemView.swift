@@ -214,7 +214,7 @@ final class NativeDockItemView: FlippedNativeView {
         case .custom:
             let reading = customReading
             value = reading.output.value
-            caption = reading.output.detail.isEmpty ? item.title : reading.output.detail
+            caption = reading.isError ? "Update failed" : reading.output.detail.isEmpty ? item.title : reading.output.detail
             toolTip = item.title + "\n" + reading.status
         default: value = ""; caption = kind.title
         }

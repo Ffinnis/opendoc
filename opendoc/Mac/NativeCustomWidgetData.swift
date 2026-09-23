@@ -41,9 +41,9 @@ final class NativeCustomWidgetData {
                 let reading: Reading
                 var input = CustomWidgetInput()
                 do {
-                    if config.source == .webpage { input = try await pageInput(config) }
+                    input = try await sourceInput(config)
                     let output = try await render(config, input: input)
-                    reading = Reading(output: output, status: config.source == .webpage ? "Updated \(Date().formatted(date: .omitted, time: .shortened))" : "Saved on this Mac")
+                    reading = Reading(output: output, status: config.source != .local ? "Updated \(Date().formatted(date: .omitted, time: .shortened))" : "Saved on this Mac")
                 } catch {
                     reading = Reading(output: entry.reading.output.value == "…" ? CustomWidgetOutput(value: "Check widget", detail: "Configuration error") : entry.reading.output,
                                       status: error.localizedDescription, isError: true)
@@ -52,7 +52,7 @@ final class NativeCustomWidgetData {
                 guard cache[item.id]?.configuration == config, cache[item.id]?.day == day else { return }
                 cache[item.id]?.reading = reading; cache[item.id]?.input = input
                 cache[item.id]?.loading = false
-                cache[item.id]?.nextRefresh = config.source == .webpage ? Date().addingTimeInterval(config.refreshInterval) : .distantFuture
+                cache[item.id]?.nextRefresh = config.source != .local ? Date().addingTimeInterval(config.refreshInterval) : .distantFuture
             }
         }
         return entry.reading
@@ -62,8 +62,17 @@ final class NativeCustomWidgetData {
 
     func preview(_ config: CustomWidgetConfiguration) async throws -> CustomWidgetOutput {
         try config.validate()
-        let input = config.source == .webpage ? try await pageInput(config) : CustomWidgetInput()
+        let input = try await sourceInput(config)
         return try await render(config, input: input)
+    }
+
+    private func sourceInput(_ config: CustomWidgetConfiguration) async throws -> CustomWidgetInput {
+        try config.validate()
+        switch config.source {
+        case .local: return CustomWidgetInput()
+        case .webpage: return try await pageInput(config)
+        case .command: return try await NativeWidgetCommand.run(config.command)
+        }
     }
 
     private func render(_ config: CustomWidgetConfiguration, input: CustomWidgetInput) async throws -> CustomWidgetOutput {
@@ -94,7 +103,7 @@ final class NativeCustomWidgetData {
         try store.updateItem(current)
             cache[itemID] = Entry(configuration: updated, day: DockItem.dayKey(),
                                   reading: Reading(output: output, status: "Saved on this Mac"),
-                                  nextRefresh: updated.source == .webpage ? Date().addingTimeInterval(updated.refreshInterval) : .distantFuture,
+                                  nextRefresh: updated.source != .local ? Date().addingTimeInterval(updated.refreshInterval) : .distantFuture,
                                   input: input)
     }
 

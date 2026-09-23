@@ -54,7 +54,7 @@ enum NativeCustomScript {
         let response: Response
         do {
             let data = FileHandle.standardInput.readDataToEndOfFile()
-            guard data.count <= 65_536 else { throw CustomWidgetError.message("Script input is too large.") }
+            guard data.count <= 1_048_576 else { throw CustomWidgetError.message("Script input is too large.") }
             response = try evaluate(JSONDecoder().decode(Request.self, from: data))
         } catch { response = Response(error: String(error.localizedDescription.prefix(600))) }
         if let data = try? JSONEncoder().encode(response) { FileHandle.standardOutput.write(data) }
