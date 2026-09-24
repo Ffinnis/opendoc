@@ -43,7 +43,7 @@ To make a widget stand out, return optional presentation fields as well:
 - `style`: `'ring'` draws progress as a ring, like an activity ring, with the value beside it. `'bar'` is the default.
 - `tint`: a colour (`blue`, `purple`, `pink`, `red`, `orange`, `yellow`, `green`, `teal`, `indigo`, `gray`) or `'level'`, which turns green, then yellow, then red as progress falls. Useful for quotas.
 - `symbol`: an SF Symbol name, such as `'drop.fill'`. It replaces the widget's glyph and appears in the ring when no app icon is shown.
-- `apps`: up to four bundle identifiers. The icon of the first installed app is shown in the ring. Open Doc only reads the icon; it never opens the app.
+- `apps`: up to four bundle identifiers. The icon of the first available app is shown in the ring. For `com.anthropic.claudefordesktop`, Open Doc can also read Claude's logo from an installed CodexBar when Claude Desktop is absent. Open Doc only reads the icon; it never opens either app.
 
 Values Open Doc does not support, such as an unknown style or a colour code, are ignored and the widget renders as usual.
 

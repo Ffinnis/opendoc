@@ -102,16 +102,27 @@ enum NativeWidgetPresentation {
         }
     }
 
-    /// The icon of the first installed app among `bundleIDs`. Looked up once
-    /// per identifier; the app is never launched.
+    /// The icon of the first available app among `bundleIDs`. Claude can also
+    /// use the provider logo from an installed CodexBar when Claude Desktop is
+    /// absent. Looked up once per identifier; neither app is launched.
     static func appIcon(_ bundleIDs: [String]?) -> NSImage? {
         for id in bundleIDs ?? [] {
             if let cached = icons[id] { if let cached { return cached } else { continue } }
-            let icon = NSWorkspace.shared.urlForApplication(withBundleIdentifier: id).map { NSWorkspace.shared.icon(forFile: $0.path) }
-            icons[id] = icon
+            let icon = loadAppIcon(id) { NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0) }
+            icons[id] = .some(icon)
             if let icon { return icon }
         }
         return nil
+    }
+
+    static func loadAppIcon(_ bundleID: String, applicationURL: (String) -> URL?) -> NSImage? {
+        if let app = applicationURL(bundleID) { return NSWorkspace.shared.icon(forFile: app.path) }
+        guard bundleID == "com.anthropic.claudefordesktop",
+              let helper = applicationURL("com.steipete.codexbar") else { return nil }
+        // Read the installed helper's own logo; do not redistribute another
+        // app's artwork or let widget output supply arbitrary file paths.
+        let logo = helper.appendingPathComponent("Contents/Resources/ProviderIcon-claude.svg")
+        return NSImage(contentsOf: logo)
     }
 }
 

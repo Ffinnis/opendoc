@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.4.1
+
+- Show Claude's real logo in usage rings when Claude Desktop is not installed, using the logo from the installed CodexBar app instead of a generic sparkle.
+
 ## 1.4.0
 
 - Redesign dock widgets. Each widget shows a coloured glyph, a heading, and a large value with a detail line or a progress bar. Side-dock widgets are centred, sticky notes adapt to dark mode, and long values shrink to fit.

@@ -3,6 +3,39 @@ import XCTest
 @testable import opendoc
 
 final class DockStyleTests: XCTestCase {
+    @MainActor
+    func testClaudeLogoUsesInstalledHelperWhenDesktopAppIsAbsent() throws {
+        let helper = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathComponent("CodexBar.app")
+        let resources = helper.appendingPathComponent("Contents/Resources")
+        try FileManager.default.createDirectory(at: resources, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: helper.deletingLastPathComponent()) }
+        // Original test artwork, not a redistributed provider logo.
+        let svg = #"<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><rect width="32" height="32" fill="white"/></svg>"#
+        let logo = resources.appendingPathComponent("ProviderIcon-claude.svg")
+        try Data(svg.utf8).write(to: logo)
+        var lookups: [String] = []
+        let image = NativeWidgetPresentation.loadAppIcon("com.anthropic.claudefordesktop") { id in
+            lookups.append(id)
+            return id == "com.steipete.codexbar" ? helper : nil
+        }
+        XCTAssertNotNil(image)
+        XCTAssertEqual(lookups, ["com.anthropic.claudefordesktop", "com.steipete.codexbar"])
+        XCTAssertNil(NativeWidgetPresentation.loadAppIcon("com.example.missing") { _ in nil })
+        try FileManager.default.removeItem(at: logo)
+        XCTAssertNil(NativeWidgetPresentation.loadAppIcon("com.anthropic.claudefordesktop") { $0 == "com.steipete.codexbar" ? helper : nil })
+    }
+
+    @MainActor
+    func testInstalledClaudeAppTakesPriorityOverHelperLogo() {
+        var lookups: [String] = []
+        let image = NativeWidgetPresentation.loadAppIcon("com.anthropic.claudefordesktop") { id in
+            lookups.append(id)
+            return URL(fileURLWithPath: "/System/Library/CoreServices/Finder.app")
+        }
+        XCTAssertNotNil(image)
+        XCTAssertEqual(lookups, ["com.anthropic.claudefordesktop"])
+    }
+
     func testTimersShowHoursPastSixtyMinutes() {
         XCTAssertEqual(NativeWidgetFormat.clock(0), "00:00")
         XCTAssertEqual(NativeWidgetFormat.clock(25 * 60), "25:00")
