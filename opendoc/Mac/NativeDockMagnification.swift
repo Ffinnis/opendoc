@@ -153,10 +153,16 @@ final class NativeDockMagnification: NSWindowController, NSMenuDelegate {
         lastPointer = screenPoint
         let x = screenPoint.x - window.frame.minX
         let magnifiable = tiles.map { $0.item.kind != .widget && $0.item.kind != .spacer }
+        // Reserve shelf padding and the settings button at both screen edges.
+        let leading = (baseRects.first?.minX ?? restingBar.minX) - restingBar.minX
+        let trailing = restingBar.maxX - (baseRects.last?.maxX ?? restingBar.maxX)
+        let artworkBounds = NSRect(x: leading + 8, y: 0,
+            width: max(0, surface.bounds.width - leading - trailing - 16), height: surface.bounds.height)
         let frames = NativeDockWave.clamp(
             NativeDockWave.layout(base: baseRects, magnifiable: magnifiable,
-                                  pointerX: magnified ? x : nil, pointerY: screenPoint.y - window.frame.minY),
-            to: surface.bounds, inset: 8)
+                                  pointerX: magnified ? x : nil, pointerY: screenPoint.y - window.frame.minY,
+                                  maximumWidth: artworkBounds.width),
+            to: artworkBounds, inset: 0)
         let now = CACurrentMediaTime()
         if magnified && entryUntil == 0 { entryUntil = now + Self.entryDuration }
         let duration: TimeInterval

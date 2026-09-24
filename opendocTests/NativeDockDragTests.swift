@@ -6,6 +6,63 @@ import XCTest
 
 @MainActor
 final class NativeDockDragTests: XCTestCase {
+    func testCrowdedDockUsesFittedGeometryForHoverDragAndWidgetHeight() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".json")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let store = DockStore(fileURL: url)
+        let application = MacApplication()
+        func tiles(in view: NSView) -> [NativeDockItemView] {
+            if let tile = view as? NativeDockItemView { return [tile] }
+            return view.subviews.flatMap { tiles(in: $0) }
+        }
+        for edge in ["Bottom", "Left", "Right"] {
+            let items = (0..<35).map { DockItem(kind: .link, title: "Icon \($0)", symbol: "app", url: "https://example.com/\($0)") }
+            var profile = DockProfile(name: "Crowded \(edge)", symbol: "app", color: "green", items: items + [.widget(.note)])
+            profile.appearance.position = edge
+            profile.appearance.size = 88
+            profile.appearance.autoHide = false
+            try store.create(profile)
+            let controller = NativeDockController(profileID: profile.id, store: store, application: application)
+            defer { controller.close() }
+            let root = try XCTUnwrap(controller.window?.contentView as? DockGlassRoot)
+            root.layoutSubtreeIfNeeded()
+            let views = tiles(in: root)
+            XCTAssertEqual(views.count, profile.items.count)
+            let source = try XCTUnwrap(views.first)
+            let widget = try XCTUnwrap(views.last)
+            XCTAssertEqual(widget.frame.height, edge == "Bottom" ? 98 : 76)
+            XCTAssertEqual(controller.profile?.appearance.size, 88)
+            let original = views.map(\.frame)
+            if edge == "Bottom", root.scroll.isHidden, !NativeMotion.reducesMotion {
+                controller.previewMagnification()
+                let overlay = try XCTUnwrap(controller.window?.childWindows?.first)
+                let magnifier = try XCTUnwrap(overlay.windowController as? NativeDockMagnification)
+                for tile in [views[0], views[17], views[34], views[1], views[33]] {
+                    let anchor = try XCTUnwrap(magnifier.popoverAnchor(for: tile.item.id))
+                    let point = overlay.convertPoint(toScreen: NSPoint(x: anchor.rect.midX, y: anchor.rect.midY))
+                    magnifier.update(at: point, animated: false)
+                    CATransaction.flush()
+                    let visible = try XCTUnwrap(magnifier.popoverAnchor(for: tile.item.id)).rect
+                    XCTAssertEqual(magnifier.tooltipTitle(at: NSPoint(x: visible.midX, y: visible.midY)), tile.item.title)
+                    XCTAssertGreaterThanOrEqual(magnifier.shelfFrame.minX, -0.001)
+                    XCTAssertLessThanOrEqual(magnifier.shelfFrame.maxX, overlay.frame.width + 0.001)
+                }
+                controller.endMagnification()
+            }
+            controller.beginDrag(source)
+            controller.updateDrag(at: NSPoint(x: -10000, y: -10000))
+            // Closing the source slot must use the fitted icon size, including
+            // the shelf's original cross-axis size when a widget is present.
+            let expected = NativeDockController.rowFrames(lengths: views.dropFirst().map {
+                NativeDockController.length(of: $0.item, iconSize: source.iconSize, vertical: edge != "Bottom")
+            }, thickness: edge == "Bottom" ? 110 : 108, vertical: edge != "Bottom")
+            XCTAssertEqual(Array(views.dropFirst()).map(\.frame), expected)
+            controller.finishDrag(at: NSPoint(x: -10000, y: -10000))
+            XCTAssertEqual(tiles(in: root).map(\.frame), original)
+            XCTAssertEqual(controller.profile?.items.map(\.id), profile.items.map(\.id))
+        }
+    }
+
     func testFinderHasNewWindowInDockAndInsideFolder() throws {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".json")
         defer { try? FileManager.default.removeItem(at: url) }

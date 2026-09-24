@@ -6,6 +6,81 @@ import QuartzCore
 
 final class DockEdgeLayoutTests: XCTestCase {
     @MainActor
+    func testCrowdedRowsFitWithoutChangingRequestedSize() {
+        let app = DockItem(kind: .application, title: "App", symbol: "app")
+        for vertical in [false, true] {
+            for count in [30, 35, 40] {
+                let items = Array(repeating: app, count: count)
+                let available: CGFloat = 1440
+                let size = NativeDockController.fittingIconSize(items: items, requestedSize: 88,
+                    vertical: vertical, availableLength: available)
+                XCTAssertGreaterThanOrEqual(size, 24)
+                XCTAssertLessThan(size, 88)
+                let frames = NativeDockController.rowFrames(lengths: items.map {
+                    NativeDockController.length(of: $0, iconSize: size, vertical: vertical)
+                }, thickness: 110, vertical: vertical)
+                let end = frames.last.map { vertical ? $0.maxY : $0.maxX } ?? 0
+                XCTAssertLessThanOrEqual(end + 3 + 38, available, "Settings must fit too")
+                XCTAssertEqual(NativeDockController.fittingIconSize(items: items, requestedSize: 88,
+                    vertical: vertical, availableLength: 5000), 88, "Larger displays restore the requested size")
+            }
+        }
+        XCTAssertEqual(NativeDockController.fittingIconSize(items: [app], requestedSize: 60,
+            vertical: false, availableLength: 1200), 60)
+    }
+
+    @MainActor
+    func testFittingIncludesFixedWidgetsSpacersAndChrome() {
+        let app = DockItem(kind: .application, title: "App", symbol: "app")
+        let items = Array(repeating: app, count: 30) + [.widget(.note), .widget(.calendar),
+            DockItem(kind: .spacer, title: "Space", symbol: "")]
+        for vertical in [false, true] {
+            let size = NativeDockController.fittingIconSize(items: items, requestedSize: 60,
+                vertical: vertical, availableLength: 1440)
+            let length = 46 + items.reduce(CGFloat.zero) {
+                $0 + NativeDockController.length(of: $1, iconSize: size, vertical: vertical) + 3
+            }
+            XCTAssertLessThanOrEqual(length, 1440)
+            XCTAssertEqual(NativeDockController.length(of: .widget(.note), iconSize: size, vertical: vertical), vertical ? 76 : 146)
+        }
+        XCTAssertEqual(NativeDockController.fittingIconSize(items: Array(repeating: app, count: 100),
+            requestedSize: 60, vertical: false, availableLength: 1024), 24)
+        XCTAssertEqual(NativeDockController.fittingIconSize(items: [.widget(.note)], requestedSize: 60,
+            vertical: false, availableLength: 100), 60)
+        XCTAssertEqual(NativeDockController.fittingIconSize(items: [], requestedSize: 60,
+            vertical: false, availableLength: 100), 60)
+    }
+
+    func testCrowdedMagnificationFitsAtBothEdgesAndDuringDirectionChanges() {
+        let base = (0..<35).map { CGRect(x: 20 + CGFloat($0) * 40, y: 6, width: 30, height: 30) }
+        let bounds = CGRect(x: 16, y: 0, width: 1400, height: 100)
+        var previous = base
+        for x in stride(from: 0.0, through: 1440, by: 12) {
+            for pointer in [CGFloat(x), 1440 - CGFloat(x)] {
+                let frames = NativeDockWave.clamp(NativeDockWave.layout(base: base,
+                    magnifiable: Array(repeating: true, count: base.count), pointerX: pointer,
+                    pointerY: 20, maximumWidth: bounds.width), to: bounds, inset: 0)
+                XCTAssertGreaterThanOrEqual(frames.first!.minX, bounds.minX - 0.001)
+                XCTAssertLessThanOrEqual(frames.last!.maxX, bounds.maxX + 0.001)
+                for index in frames.indices {
+                    XCTAssertGreaterThanOrEqual(frames[index].width, base[index].width)
+                    XCTAssertTrue(NativeDockWave.hitRect(artwork: frames[index], tileWidth: 37).contains(frames[index]))
+                    if index > 0 {
+                        for progress in [CGFloat(0), 0.5, 1] {
+                            let left = previous[index - 1].maxX * (1 - progress) + frames[index - 1].maxX * progress
+                            let right = previous[index].minX * (1 - progress) + frames[index].minX * progress
+                            XCTAssertEqual(right - left, 10, accuracy: 0.001)
+                        }
+                    }
+                }
+                previous = frames
+            }
+        }
+        XCTAssertEqual(NativeDockWave.layout(base: base, magnifiable: Array(repeating: true, count: base.count),
+            pointerX: nil, pointerY: nil, maximumWidth: bounds.width), base)
+    }
+
+    @MainActor
     func testFittingRowHasNoGlassOrScrollClipAncestor() {
         let root = DockGlassRoot(frame: NSRect(x: 0, y: 0, width: 400, height: 100))
         let row = FlippedNativeView(frame: NSRect(x: 0, y: 0, width: 300, height: 100))
@@ -22,6 +97,8 @@ final class DockEdgeLayoutTests: XCTestCase {
         XCTAssertTrue(root.scroll.documentView === row, "Overflow must still scroll and clip widgets")
         XCTAssertTrue(row.superview is NSClipView)
         XCTAssertFalse(root.scroll.isHidden)
+        XCTAssertTrue(root.scroll.hasHorizontalScroller)
+        XCTAssertFalse(root.scroll.hasVerticalScroller)
 
         root.setFrameSize(NSSize(width: 400, height: 100))
         root.needsLayout = true
@@ -29,6 +106,24 @@ final class DockEdgeLayoutTests: XCTestCase {
         XCTAssertTrue(row.superview === root)
         XCTAssertNil(root.scroll.documentView)
         XCTAssertEqual(row.frame.origin, .zero)
+        XCTAssertFalse(root.scroll.hasHorizontalScroller)
+    }
+
+    @MainActor
+    func testOverflowCanScrollToLastItemOnEitherAxis() {
+        for vertical in [false, true] {
+            let root = DockGlassRoot(frame: NSRect(x: 0, y: 0, width: 300, height: 100))
+            let row = FlippedNativeView(frame: NSRect(x: 0, y: 0, width: vertical ? 300 : 3000,
+                height: vertical ? 3000 : 100))
+            let last = NSView(frame: NSRect(x: vertical ? 8 : 2960, y: vertical ? 2960 : 8, width: 25, height: 25))
+            row.addSubview(last)
+            root.setDocumentView(row)
+            root.layoutSubtreeIfNeeded()
+            XCTAssertEqual(root.scroll.hasHorizontalScroller, !vertical)
+            XCTAssertEqual(root.scroll.hasVerticalScroller, vertical)
+            last.scrollToVisible(last.bounds)
+            XCTAssertTrue(root.scroll.documentVisibleRect.contains(last.frame))
+        }
     }
 
     func testHostTransformMovesArtworkWithoutResizingItsBounds() throws {

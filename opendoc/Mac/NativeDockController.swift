@@ -86,7 +86,10 @@ final class NativeDockController: NSWindowController, NSMenuDelegate {
             })
         }
         screenObserver = NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.positionPanel() }
+            MainActor.assumeIsolated {
+                self?.endMagnification()
+                self?.reload()
+            }
         }
         timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
@@ -159,7 +162,7 @@ final class NativeDockController: NSWindowController, NSMenuDelegate {
         root.appearance = profile.appearance.material == "Dark" ? NSAppearance(named: .darkAqua) : profile.appearance.material == "Light" ? NSAppearance(named: .aqua) : nil
         root.configure(profile.appearance)
         let vertical = profile.appearance.position != "Bottom"
-        let size = CGFloat(profile.appearance.size)
+        let requestedSize = CGFloat(profile.appearance.size)
         let folderApps = Set(profile.items.filter { $0.kind == .folder }.flatMap { $0.children ?? [] }.compactMap(\.applicationURL))
         var displayed = profile.items.filter { $0.applicationURL.map(folderApps.contains) != true }
         if profile.items.contains(where: { $0.kind == .application || $0.kind == .folder }) {
@@ -177,7 +180,14 @@ final class NativeDockController: NSWindowController, NSMenuDelegate {
                 }, at: insertion)
             }
         }
+        let screen = window?.screen ?? NSScreen.main ?? NSScreen.screens.first
+        let availableLength = screen.map { vertical ? $0.frame.height - 80 : $0.frame.width - 24 } ?? .greatestFiniteMagnitude
+        let size = Self.fittingIconSize(items: displayed, requestedSize: requestedSize, vertical: vertical, availableLength: availableLength)
+        // Widgets keep their configured height even when neighboring icons shrink.
+        let thicknessSize = displayed.contains { $0.kind == .widget } ? requestedSize : size
+        let thickness = vertical ? max(84, thicknessSize + 20) : thicknessSize + 22
         if popupOpen, magnification != nil, displayed.map(\.id) == itemViews.map({ $0.item.id }),
+           thickness == (vertical ? contentSize.width : contentSize.height),
            itemViews.allSatisfy({ $0.iconSize == size && $0.vertical == vertical }) {
             for (view, item) in zip(itemViews, displayed) { view.item = item }
             magnification?.refreshItems()
@@ -196,7 +206,6 @@ final class NativeDockController: NSWindowController, NSMenuDelegate {
             return view
         }
         for old in oldViews.values where !itemViews.contains(where: { $0 === old }) { old.removeFromSuperview() }
-        let thickness = vertical ? max(84, size + 20) : size + 22
         let frames = Self.rowFrames(lengths: itemViews.map { Self.length(of: $0.item, iconSize: size, vertical: vertical) }, thickness: thickness, vertical: vertical)
         for (view, frame) in zip(itemViews, frames) {
             if view.superview == nil {
@@ -245,6 +254,19 @@ final class NativeDockController: NSWindowController, NSMenuDelegate {
         case .spacer: return 12
         default: return iconSize + 7
         }
+    }
+
+    /// Fit the displayed row, including running apps, spacing and settings.
+    /// Keep a usable minimum; larger collections remain scrollable. This is
+    /// presentation only, so removing items restores the user's chosen size.
+    static func fittingIconSize(items: [DockItem], requestedSize: CGFloat, vertical: Bool, availableLength: CGFloat) -> CGFloat {
+        let iconCount = items.filter { $0.kind != .widget && $0.kind != .spacer }.count
+        guard iconCount > 0 else { return requestedSize }
+        let fixedLength = 8 + 38 + items.reduce(CGFloat.zero) {
+            $0 + length(of: $1, iconSize: 0, vertical: vertical) + 3
+        }
+        let fitting = ((availableLength - fixedLength) / CGFloat(iconCount)).rounded(.down)
+        return min(requestedSize, max(24, fitting))
     }
 
     /// Tile frames for a row, in the flipped content coordinates. `gap` opens
@@ -683,8 +705,8 @@ final class NativeDockController: NSWindowController, NSMenuDelegate {
         groupTarget = nil
         dropFrame = nil
         let vertical = draggedView.vertical
-        let size = CGFloat(profile.appearance.size)
-        let thickness = vertical ? max(84, size + 20) : size + 22
+        let size = draggedView.iconSize
+        let thickness = vertical ? contentSize.width : contentSize.height
         let others = itemViews.filter { $0 !== draggedView }
         let lengths = others.map { Self.length(of: $0.item, iconSize: size, vertical: vertical) }
         let closed = Self.rowFrames(lengths: lengths, thickness: thickness, vertical: vertical)
@@ -926,6 +948,8 @@ final class DockGlassRoot: NSView {
         scroll.borderType = .noBorder
         scroll.horizontalScrollElasticity = .none
         scroll.verticalScrollElasticity = .none
+        scroll.scrollerStyle = .overlay
+        scroll.autohidesScrollers = true
         addSubview(material)
         addSubview(scroll)
         clipsToBounds = false
@@ -952,6 +976,8 @@ final class DockGlassRoot: NSView {
         scroll.frame = bounds
         guard let document else { return }
         let overflows = document.frame.width > bounds.width + 0.5 || document.frame.height > bounds.height + 0.5
+        scroll.hasHorizontalScroller = document.frame.width > bounds.width + 0.5
+        scroll.hasVerticalScroller = document.frame.height > bounds.height + 0.5
         scroll.isHidden = !overflows
         if overflows {
             if scroll.documentView !== document { scroll.documentView = document }

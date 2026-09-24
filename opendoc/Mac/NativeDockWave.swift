@@ -28,7 +28,7 @@ enum NativeDockWave {
     /// pointer stays under it, so the row grows on both sides of the pointer
     /// and the hovered icon never drifts away. Beyond either end of the row,
     /// that end stays put.
-    static func layout(base: [CGRect], magnifiable: [Bool], pointerX: CGFloat?, pointerY: CGFloat?) -> [CGRect] {
+    static func layout(base: [CGRect], magnifiable: [Bool], pointerX: CGFloat?, pointerY: CGFloat?, maximumWidth: CGFloat? = nil) -> [CGRect] {
         guard base.count == magnifiable.count, let x = pointerX, !base.isEmpty else {
             return base
         }
@@ -40,11 +40,15 @@ enum NativeDockWave {
             return rect.width * maximumGrowth * (1 + cos(distance * .pi)) / 2
         }
         guard growth.contains(where: { $0 > 0 }) else { return base }
+        // A crowded row may have less room than the full wave needs. Limit
+        // growth before positioning; translation alone cannot fit a wider row.
+        let baseWidth = base[base.count - 1].maxX - base[0].minX
+        let growthScale = maximumWidth.map { min(1, max(0, $0 - baseWidth) / growth.reduce(0, +)) } ?? 1
         var items = base
         var cursor = base[0].minX
         for index in base.indices {
             let rect = base[index]
-            let extra = growth[index]
+            let extra = growth[index] * growthScale
             items[index] = CGRect(x: cursor, y: rect.minY, width: rect.width + extra,
                                   height: rect.height + extra * rect.height / max(1, rect.width))
             cursor = items[index].maxX

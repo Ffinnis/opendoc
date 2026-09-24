@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.3.1
+
+- Automatically reduce icon size when a crowded bottom or side dock exceeds the available screen space, including docks with 30 or more apps. Keep the saved size preference and restore it when space allows.
+- Preserve widget dimensions and keep hover magnification, click targets, and drag positioning aligned with the fitted icons.
+- Show scrollbars when a dock still overflows at the minimum icon size, and recalculate the layout when displays change.
+
 ## 1.3.0
 
 - Magnify the dock like the system Dock. Icons near the pointer grow, the row makes room for them, and the shelf widens around it. The icon under the pointer stays under the pointer.
