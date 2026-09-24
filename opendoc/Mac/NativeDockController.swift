@@ -160,7 +160,6 @@ final class NativeDockController: NSWindowController, NSMenuDelegate {
         window?.title = profile.name
         root.setAccessibilityLabel("\(profile.name) Dock")
         root.appearance = profile.appearance.material == "Dark" ? NSAppearance(named: .darkAqua) : profile.appearance.material == "Light" ? NSAppearance(named: .aqua) : nil
-        root.configure(profile.appearance)
         let vertical = profile.appearance.position != "Bottom"
         let requestedSize = CGFloat(profile.appearance.size)
         let folderApps = Set(profile.items.filter { $0.kind == .folder }.flatMap { $0.children ?? [] }.compactMap(\.applicationURL))
@@ -186,6 +185,7 @@ final class NativeDockController: NSWindowController, NSMenuDelegate {
         // Widgets keep their configured height even when neighboring icons shrink.
         let thicknessSize = displayed.contains { $0.kind == .widget } ? requestedSize : size
         let thickness = vertical ? max(84, thicknessSize + 20) : thicknessSize + 22
+        root.configure(profile.appearance, cornerRadius: NativeDockStyle.shelfRadius(iconSize: size, thickness: thickness))
         if popupOpen, magnification != nil, displayed.map(\.id) == itemViews.map({ $0.item.id }),
            thickness == (vertical ? contentSize.width : contentSize.height),
            itemViews.allSatisfy({ $0.iconSize == size && $0.vertical == vertical }) {
@@ -230,17 +230,19 @@ final class NativeDockController: NSWindowController, NSMenuDelegate {
         settings.isBordered = false
         settings.wantsLayer = true
         settings.contentTintColor = .secondaryLabelColor
+        settings.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 13, weight: .medium)
         settings.toolTip = "Add widgets or edit this dock"
         settings.setAccessibilityLabel("Dock settings")
-        // Chrome stays out of the way like the system Dock: it fades in while
-        // the pointer is over the dock and stays reachable from the shelf menu.
-        settings.alphaValue = chromeVisible ? 1 : 0
-        settings.frame = vertical ? NSRect(x: 8, y: offset, width: thickness - 16, height: 25) : NSRect(x: offset + 3, y: 10, width: 25, height: thickness - 20)
+        // Chrome stays quiet like the system Dock: faint at rest so the end of
+        // the shelf reads as a control, full strength while the pointer is over it.
+        settings.alphaValue = chromeVisible ? 1 : NativeDockStyle.restingChromeAlpha
+        let button = NativeDockStyle.settingsButtonWidth
+        settings.frame = vertical ? NSRect(x: 8, y: offset + 1, width: thickness - 16, height: button) : NSRect(x: offset + 1, y: 10, width: button, height: thickness - 20)
         dockContent.addSubview(settings)
         let ordered: [NSView] = itemViews + [settings] + (landingPreview.map { [$0] } ?? [])
         dockContent.subviews = ordered
         settingsButton = settings
-        offset += 38
+        offset += NativeDockStyle.trailingLength
         contentSize = vertical ? NSSize(width: thickness, height: offset) : NSSize(width: offset, height: thickness)
         dockContent.frame = NSRect(origin: .zero, size: contentSize)
         root.setDocumentView(dockContent)
@@ -250,7 +252,7 @@ final class NativeDockController: NSWindowController, NSMenuDelegate {
 
     static func length(of item: DockItem, iconSize: CGFloat, vertical: Bool) -> CGFloat {
         switch item.kind {
-        case .widget: return vertical ? 76 : item.widget == .note ? 146 : item.widget == .calendar ? 122 : 126
+        case .widget: return vertical ? 76 : [.note, .custom].contains(item.widget) ? 146 : item.widget == .calendar ? 122 : 126
         case .spacer: return 12
         default: return iconSize + 7
         }
@@ -262,7 +264,7 @@ final class NativeDockController: NSWindowController, NSMenuDelegate {
     static func fittingIconSize(items: [DockItem], requestedSize: CGFloat, vertical: Bool, availableLength: CGFloat) -> CGFloat {
         let iconCount = items.filter { $0.kind != .widget && $0.kind != .spacer }.count
         guard iconCount > 0 else { return requestedSize }
-        let fixedLength = 8 + 38 + items.reduce(CGFloat.zero) {
+        let fixedLength = 8 + NativeDockStyle.trailingLength + items.reduce(CGFloat.zero) {
             $0 + length(of: $1, iconSize: 0, vertical: vertical) + 3
         }
         let fitting = ((availableLength - fixedLength) / CGFloat(iconCount)).rounded(.down)
@@ -284,7 +286,7 @@ final class NativeDockController: NSWindowController, NSMenuDelegate {
         guard visible != chromeVisible else { return }
         chromeVisible = visible
         guard let settingsButton else { return }
-        NativeMotion.animate(visible ? 0.15 : 0.3) { settingsButton.animator().alphaValue = visible ? 1 : 0 }
+        NativeMotion.animate(visible ? 0.15 : 0.3) { settingsButton.animator().alphaValue = visible ? 1 : NativeDockStyle.restingChromeAlpha }
     }
 
     func positionPanel(animated: Bool = false) {
@@ -669,19 +671,39 @@ final class NativeDockController: NSWindowController, NSMenuDelegate {
         dragLayout = [:]
         dropFrame = nil
         landingPreview?.removeFromSuperview(); landingPreview = nil
-        let image = NSImage(size: view.bounds.size)
-        if let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) {
-            view.cacheDisplay(in: view.bounds, to: bitmap)
-            image.addRepresentation(bitmap)
-        }
-        let preview = NSImageView(image: image)
+        // Render the layers, not cacheDisplay: icons are layer contents that a
+        // display cache does not capture.
+        let preview = NSImageView(image: view.snapshot())
+        preview.imageScaling = .scaleAxesIndependently
         preview.frame = view.frame
         preview.wantsLayer = true
         dockContent.addSubview(preview, positioned: .above, relativeTo: nil)
         dragImage = preview
+        liftDragPreview(preview)
         // The lifted icon travels with the pointer while its slot closes and a
         // gap opens under it, like the system Dock. The tile itself stays put.
         view.alphaValue = 0
+    }
+
+    /// The picked-up item grows slightly and casts a soft shadow, so it reads
+    /// as lifted off the shelf rather than sliding along it.
+    private func liftDragPreview(_ preview: NSView) {
+        guard let layer = preview.layer else { return }
+        layer.shadowColor = NSColor.black.cgColor
+        layer.shadowOpacity = 0.28
+        layer.shadowRadius = 6
+        layer.shadowOffset = CGSize(width: 0, height: -3)
+        guard !NativeMotion.reducesMotion else { return }
+        preview.frame = preview.frame.insetBy(dx: -preview.frame.width * 0.04, dy: -preview.frame.height * 0.04)
+        // AppKit anchors view layers at a corner; scale about the centre instead.
+        let center = CGPoint(x: preview.bounds.midX, y: preview.bounds.midY)
+        let start = CATransform3DConcat(CATransform3DConcat(CATransform3DMakeTranslation(-center.x, -center.y, 0),
+                                                            CATransform3DMakeScale(0.92, 0.92, 1)),
+                                        CATransform3DMakeTranslation(center.x, center.y, 0))
+        let grow = NativeMotion.spring("transform", duration: 0.25, bounce: 0.2)
+        grow.fromValue = NSValue(caTransform3D: start)
+        grow.toValue = NSValue(caTransform3D: CATransform3DIdentity)
+        layer.add(grow, forKey: "dockLift")
     }
 
     private func applyDragLayout(_ views: [NativeDockItemView], frames: [NSRect]) {
@@ -699,7 +721,7 @@ final class NativeDockController: NSWindowController, NSMenuDelegate {
     func updateDrag(at windowPoint: NSPoint) {
         guard let draggedView, let profile else { return }
         let point = dockContent.convert(windowPoint, from: nil)
-        dragImage?.setFrameOrigin(NSPoint(x: point.x - draggedView.bounds.midX, y: point.y - draggedView.bounds.midY))
+        if let dragImage { dragImage.setFrameOrigin(NSPoint(x: point.x - dragImage.frame.width / 2, y: point.y - dragImage.frame.height / 2)) }
         itemViews.forEach { $0.showGrouping(false) }
         dropTarget = nil
         groupTarget = nil
@@ -876,6 +898,7 @@ final class DockGlassRoot: NSView {
     private let material: NSView
     private var document: NSView?
     private var tracking: NSTrackingArea?
+    private var colorObserver: NSObjectProtocol?
     var autoHide = false {
         didSet {
             if autoHide { controller?.scheduleHide() } else { controller?.reveal() }
@@ -891,32 +914,37 @@ final class DockGlassRoot: NSView {
         }
     }
 
-    static func makeFolderMaterial(containing content: NSView) -> NSView {
-        makeMaterial(containing: content, cornerRadius: 13)
-    }
-
-    static func configure(_ material: NSView, appearance: DockAppearance) {
+    static func configure(_ material: NSView, appearance: DockAppearance, cornerRadius: CGFloat? = nil) {
+        let tint = NativeDockStyle.tint(named: appearance.tintColor, strength: appearance.glassTint)
         if #available(macOS 26.0, *), let glass = material as? NSGlassEffectView {
             glass.style = appearance.glassStyle == "Clear" ? .clear : .regular
-            glass.tintColor = appearance.glassTint == 0 ? nil : NSColor.black.withAlphaComponent(appearance.glassTint * 0.6)
+            glass.tintColor = tint
+            if let cornerRadius { glass.cornerRadius = cornerRadius }
         } else if let effect = material as? NSVisualEffectView {
             // Materials that follow the desktop appearance, like the system
             // Dock before Liquid Glass. HUD material stays dark on a light desktop.
             effect.material = appearance.glassStyle == "Clear" ? .underWindowBackground : .popover
-            effect.layer?.backgroundColor = NSColor.black.withAlphaComponent(appearance.glassTint * 0.6).cgColor
+            var color = tint?.cgColor
+            effect.effectiveAppearance.performAsCurrentDrawingAppearance { color = tint?.cgColor }
+            effect.layer?.backgroundColor = color
+            if let cornerRadius { effect.layer?.cornerRadius = cornerRadius }
             Self.updateEdge(of: effect)
         }
     }
 
-    /// A hairline highlight separates the fallback shelf from the desktop.
+    /// A hairline highlight separates the fallback shelf from the desktop:
+    /// a light rim in dark mode and a soft edge in light mode, like glass.
     static func updateEdge(of effect: NSVisualEffectView) {
-        var color = NSColor.labelColor.withAlphaComponent(0.14).cgColor
-        effect.effectiveAppearance.performAsCurrentDrawingAppearance { color = NSColor.labelColor.withAlphaComponent(0.14).cgColor }
-        effect.layer?.borderColor = color
-        effect.layer?.borderWidth = 1
+        let dark = effect.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        effect.layer?.borderColor = (dark ? NSColor.white.withAlphaComponent(0.16) : NSColor.black.withAlphaComponent(0.1)).cgColor
+        effect.layer?.borderWidth = 1 / (effect.window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2)
     }
 
-    func configure(_ appearance: DockAppearance) { Self.configure(material, appearance: appearance) }
+    private var appearanceSettings: DockAppearance?
+    func configure(_ appearance: DockAppearance, cornerRadius: CGFloat) {
+        appearanceSettings = appearance
+        Self.configure(material, appearance: appearance, cornerRadius: cornerRadius)
+    }
 
     static func makeMaterial(containing content: NSView, cornerRadius: CGFloat = 18) -> NSView {
         if #available(macOS 26.0, *) {
@@ -958,8 +986,21 @@ final class DockGlassRoot: NSView {
         material.autoresizingMask = [.width, .height]
         setAccessibilityElement(true)
         setAccessibilityRole(.group)
+        // An Accent tint follows the system accent colour when it changes.
+        colorObserver = NotificationCenter.default.addObserver(forName: NSColor.systemColorsDidChangeNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, let settings = self.appearanceSettings else { return }
+                Self.configure(self.material, appearance: settings)
+            }
+        }
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
+    deinit { if let colorObserver { NotificationCenter.default.removeObserver(colorObserver) } }
+    override func viewDidChangeBackingProperties() {
+        super.viewDidChangeBackingProperties()
+        // The hairline edge is one device pixel on every display.
+        if let effect = material as? NSVisualEffectView { Self.updateEdge(of: effect) }
+    }
     func setDocumentView(_ view: NSView) {
         document = view
         needsLayout = true
@@ -967,7 +1008,9 @@ final class DockGlassRoot: NSView {
 
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
-        if let effect = material as? NSVisualEffectView { Self.updateEdge(of: effect) }
+        // Accent tints and edges resolve per appearance.
+        if let appearanceSettings { Self.configure(material, appearance: appearanceSettings) }
+        else if let effect = material as? NSVisualEffectView { Self.updateEdge(of: effect) }
     }
 
     override func layout() {

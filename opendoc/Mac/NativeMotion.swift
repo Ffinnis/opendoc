@@ -8,7 +8,13 @@ enum NativeMotion {
         NSWorkspace.shared.accessibilityDisplayShouldReduceMotion || CommandLine.arguments.contains("--reduce-motion")
     }
 
-    static func animate(_ duration: TimeInterval, timingFunction: CAMediaTimingFunction = CAMediaTimingFunction(controlPoints: 0.22, 0.8, 0.3, 1), changes: () -> Void, completion: @escaping () -> Void = {}) {
+    /// Every dock transition uses one of two curves: `standard` for things that
+    /// move once (reveal, reflow, fades), `tracking` for magnification, which
+    /// retargets on each pointer event and must start at full speed.
+    nonisolated static var standard: CAMediaTimingFunction { CAMediaTimingFunction(controlPoints: 0.22, 0.8, 0.3, 1) }
+    nonisolated static var tracking: CAMediaTimingFunction { CAMediaTimingFunction(controlPoints: 0.22, 0.65, 0.3, 1) }
+
+    static func animate(_ duration: TimeInterval, timingFunction: CAMediaTimingFunction = standard, changes: () -> Void, completion: @escaping () -> Void = {}) {
         NSAnimationContext.runAnimationGroup { context in
             context.duration = reducesMotion ? 0 : duration
             context.timingFunction = timingFunction

@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.4.0
+
+- Redesign dock widgets. Each widget shows a coloured glyph, a heading, and a large value with a detail line or a progress bar. Side-dock widgets are centred, sticky notes adapt to dark mode, and long values shrink to fit.
+- Replace widget popovers with cards: a large ring and session lengths for the focus timer, a row of glasses for hydration, a checklist with progress, and capsule buttons in each widget's colour. Folders use the same style.
+- Let custom widgets draw progress as a ring, like an activity ring, with an installed app's icon or an SF Symbol inside. The `level` tint turns green, yellow, then red as a quota runs low. The Codex and Claude usage templates use it.
+- Add glass tint colours: Graphite, your accent colour, Blue, Purple, Pink, Red, Orange, Yellow, and Green, available in Settings and the `opendoc` CLI. Existing docks keep their Graphite tint.
+- Match the shelf's corners to its tiles at every icon size, and keep the settings button faintly visible instead of leaving an empty space.
+- Show a live dock preview in Appearance settings, grouped into Placement, Glass, and Icons. The Widget Library previews widgets at their real size on glass.
+- Fade hover labels, lift dragged items with a shadow, and use the same press feedback at rest and while magnified. Folder previews stay sharp when magnified.
+- Fix "1 tasks", timers and countdowns past an hour showing minutes only, and world clocks ignoring the 12-hour setting. Battery widgets show charging.
+
 ## 1.3.1
 
 - Automatically reduce icon size when a crowded bottom or side dock exceeds the available screen space, including docks with 30 or more apps. Keep the saved size preference and restore it when space allows.

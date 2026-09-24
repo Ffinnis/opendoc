@@ -15,11 +15,14 @@ final class NativePreferencesController: NSWindowController, NSTableViewDataSour
     private let glassStyle = NSSegmentedControl(labels: ["Clear", "Regular"], trackingMode: .selectOne, target: nil, action: nil)
     private let tintSlider = NSSlider(value: 0, minValue: 0, maxValue: 1, target: nil, action: nil)
     private let tintLabel = NSTextField(labelWithString: "None")
+    private let tintPicker = NativeTintPicker()
+    private let preview = NativeDockPreview()
     private let sizeSlider = NSSlider(value: 44, minValue: 36, maxValue: 88, target: nil, action: nil)
     private let sizeLabel = NSTextField(labelWithString: "44 pt")
     private let autoHide = NSButton(checkboxWithTitle: "Automatically hide and show this dock", target: nil, action: nil)
     private let detail = NSStackView()
     private let options = NSStackView()
+    private let optionsScroll = NSScrollView()
     private let tabs = NSSegmentedControl(labels: ["Items", "Appearance"], trackingMode: .selectOne, target: nil, action: nil)
     private let itemScroll = NSScrollView()
     private let footer = NSTextField(wrappingLabelWithString: "")
@@ -103,7 +106,7 @@ final class NativePreferencesController: NSWindowController, NSTableViewDataSour
         detail.addArrangedSubview(itemScroll)
         itemScroll.widthAnchor.constraint(equalTo: detail.widthAnchor).isActive = true
         itemScroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 160).isActive = true
-        options.orientation = .vertical; options.alignment = .leading; options.spacing = 20
+        options.orientation = .vertical; options.alignment = .leading; options.spacing = 14
         position.target = self; position.action = #selector(changeAppearance)
         position.setAccessibilityLabel("Dock position")
         material.addItems(withTitles: ["Automatic", "Light", "Dark"])
@@ -114,44 +117,85 @@ final class NativePreferencesController: NSWindowController, NSTableViewDataSour
         sizeSlider.widthAnchor.constraint(equalToConstant: 200).isActive = true
         sizeSlider.setAccessibilityLabel("Icon size")
         autoHide.target = self; autoHide.action = #selector(changeAppearance)
-        options.addArrangedSubview(formRow("Position", position))
-        options.addArrangedSubview(formRow("Material", material))
         glassStyle.target = self; glassStyle.action = #selector(changeAppearance)
         glassStyle.setAccessibilityLabel("Glass style")
-        options.addArrangedSubview(formRow("Glass", glassStyle))
         tintSlider.target = self; tintSlider.action = #selector(changeAppearance)
         tintSlider.isContinuous = false
         tintSlider.widthAnchor.constraint(equalToConstant: 200).isActive = true
         tintSlider.setAccessibilityLabel("Glass tint strength")
+        tintPicker.onChange = { [weak self] changed in
+            guard let self else { return }
+            // Picking a colour with no strength would change nothing visible,
+            // including the colour that is already selected.
+            if tintSlider.doubleValue == 0 { tintSlider.doubleValue = 0.35 }
+            else if !changed { return }
+            changeAppearance()
+        }
+        preview.translatesAutoresizingMaskIntoConstraints = false
+        preview.heightAnchor.constraint(equalToConstant: 104).isActive = true
+        options.addArrangedSubview(preview)
+        preview.widthAnchor.constraint(equalTo: options.widthAnchor).isActive = true
         let tint = NSStackView(views: [tintSlider, tintLabel]); tint.spacing = 10
-        options.addArrangedSubview(formRow("Tint", tint))
-        let sizing = NSStackView(views: [sizeSlider, sizeLabel]); sizing.orientation = .horizontal; sizing.spacing = 10
-        options.addArrangedSubview(formRow("Icon size", sizing))
-        options.addArrangedSubview(autoHide)
-        options.addArrangedSubview(NativeButton("Preview Magnification") { [weak self] in
+        let magnify = NativeButton("Preview Magnification") { [weak self] in
             guard let self else { return }
             application?.previewMagnification(in: store.active.id)
-        })
-        let filler = NSView(); filler.heightAnchor.constraint(greaterThanOrEqualToConstant: 20).isActive = true
-        options.addArrangedSubview(filler)
-        detail.addArrangedSubview(options)
-        options.widthAnchor.constraint(equalTo: detail.widthAnchor).isActive = true
-        options.isHidden = true
+        }
+        let sizing = NSStackView(views: [sizeSlider, sizeLabel]); sizing.orientation = .horizontal; sizing.spacing = 10
+        options.addArrangedSubview(section("Placement", [("Position", position), ("", autoHide)]))
+        options.addArrangedSubview(section("Glass", [("Material", material), ("Style", glassStyle), ("Tint", tintPicker), ("Strength", tint)]))
+        options.addArrangedSubview(section("Icons", [("Size", sizing), ("", magnify)]))
+        // Scrolls in short windows instead of compressing the controls.
+        let document = FlippedNativeView()
+        options.translatesAutoresizingMaskIntoConstraints = false
+        document.addSubview(options)
+        document.translatesAutoresizingMaskIntoConstraints = false
+        optionsScroll.documentView = document
+        optionsScroll.drawsBackground = false
+        optionsScroll.hasVerticalScroller = true
+        optionsScroll.autohidesScrollers = true
+        let clip = optionsScroll.contentView
+        NSLayoutConstraint.activate([
+            options.topAnchor.constraint(equalTo: document.topAnchor), options.bottomAnchor.constraint(equalTo: document.bottomAnchor, constant: -8),
+            options.leadingAnchor.constraint(equalTo: document.leadingAnchor), options.trailingAnchor.constraint(equalTo: document.trailingAnchor, constant: -2),
+            document.topAnchor.constraint(equalTo: clip.topAnchor), document.leadingAnchor.constraint(equalTo: clip.leadingAnchor),
+            document.widthAnchor.constraint(equalTo: clip.widthAnchor)
+        ])
+        detail.addArrangedSubview(optionsScroll)
+        optionsScroll.widthAnchor.constraint(equalTo: detail.widthAnchor).isActive = true
+        optionsScroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 160).isActive = true
+        optionsScroll.isHidden = true
         footer.font = .systemFont(ofSize: 11); footer.textColor = .secondaryLabelColor
         detail.addArrangedSubview(footer)
         replace.target = self; replace.action = #selector(toggleReplacement)
-        detail.addArrangedSubview(replace)
         let restore = NSButton(title: "Restore Apple’s Dock", target: self, action: #selector(restoreSystemDock))
         restore.bezelStyle = .rounded
+        detail.addArrangedSubview(replace)
         detail.addArrangedSubview(restore)
         split.addSplitViewItem(NSSplitViewItem(viewController: editor))
         window?.contentViewController = split
     }
 
-    private func formRow(_ title: String, _ control: NSView) -> NSView {
-        let label = NSTextField(labelWithString: title)
-        label.widthAnchor.constraint(equalToConstant: 80).isActive = true
-        let stack = NSStackView(views: [label, control]); stack.orientation = .horizontal; stack.spacing = 12; stack.alignment = .centerY
+    /// A titled group of right-aligned labels and controls, like System Settings.
+    private func section(_ title: String, _ rows: [(String, NSView)]) -> NSView {
+        let heading = NSTextField(labelWithString: title)
+        heading.font = .systemFont(ofSize: 13, weight: .semibold)
+        let grid = NSGridView(views: rows.map { label, control in
+            let field = NSTextField(labelWithString: label.isEmpty ? "" : label + ":")
+            field.textColor = .secondaryLabelColor
+            return [field, control]
+        })
+        grid.rowSpacing = 10
+        grid.columnSpacing = 12
+        grid.column(at: 0).xPlacement = .trailing
+        grid.column(at: 0).width = 80
+        grid.rowAlignment = .firstBaseline
+        for index in 0..<grid.numberOfRows where rows[index].1 is NativeTintPicker || rows[index].1 is NSStackView {
+            grid.row(at: index).rowAlignment = .none
+            grid.cell(atColumnIndex: 0, rowIndex: index).yPlacement = .center
+            grid.cell(atColumnIndex: 1, rowIndex: index).yPlacement = .center
+        }
+        let stack = NSStackView(views: [heading, grid])
+        stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 8
         return stack
     }
 
@@ -169,6 +213,11 @@ final class NativePreferencesController: NSWindowController, NSTableViewDataSour
         glassStyle.selectedSegment = appearance.glassStyle == "Clear" ? 0 : 1
         tintSlider.doubleValue = appearance.glassTint
         tintLabel.stringValue = appearance.glassTint == 0 ? "None" : "\(Int(appearance.glassTint * 100))%"
+        tintPicker.selected = appearance.tintColor
+        // A hidden dock's data widgets stay idle in the preview; a visible dock
+        // already fetches the same readings, so its preview shares them.
+        preview.show(Array(store.active.items.filter { $0.kind != .spacer }.prefix(8)), appearance: appearance, iconSize: min(48, appearance.size),
+                     live: application?.isDockVisible(store.active.id) == true)
         sizeSlider.doubleValue = appearance.size; sizeLabel.stringValue = "\(Int(appearance.size)) pt"
         autoHide.state = appearance.autoHide ? .on : .off
         items.reloadData()
@@ -230,7 +279,7 @@ final class NativePreferencesController: NSWindowController, NSTableViewDataSour
 
     @objc private func changeTab() {
         itemScroll.isHidden = tabs.selectedSegment != 0
-        options.isHidden = tabs.selectedSegment != 1
+        optionsScroll.isHidden = tabs.selectedSegment != 1
         footer.isHidden = tabs.selectedSegment != 0
     }
     @objc private func toggleVisible() {
@@ -246,6 +295,7 @@ final class NativePreferencesController: NSWindowController, NSTableViewDataSour
         profile.appearance.material = ["Glass", "Light", "Dark"][material.indexOfSelectedItem]
         profile.appearance.glassStyle = glassStyle.selectedSegment == 0 ? "Clear" : "Regular"
         profile.appearance.glassTint = tintSlider.doubleValue
+        profile.appearance.tintColor = tintPicker.selected
         profile.appearance.size = sizeSlider.doubleValue.rounded()
         profile.appearance.autoHide = autoHide.state == .on
         save(profile)
@@ -395,6 +445,93 @@ final class NativePreferencesController: NSWindowController, NSTableViewDataSour
         profile.items.insert(item, at: min(profile.items.count, max(0, row > index ? row - 1 : row)))
         save(profile)
         return true
+    }
+}
+
+/// Round colour swatches for the glass tint, one per supported colour.
+final class NativeTintPicker: NSStackView {
+    /// Called with whether the selection changed.
+    var onChange: ((Bool) -> Void)?
+    var selected = "Graphite" {
+        didSet {
+            swatches.forEach { $0.needsDisplay = true }
+            guard selected != oldValue else { return }
+            for swatch in swatches where swatch.name == selected || swatch.name == oldValue {
+                NSAccessibility.post(element: swatch, notification: .valueChanged)
+            }
+        }
+    }
+    private var swatches: [Swatch] = []
+
+    init() {
+        super.init(frame: .zero)
+        orientation = .horizontal
+        spacing = 8
+        swatches = DockAppearance.tintColors.map { name in
+            let swatch = Swatch(name: name, picker: self)
+            addArrangedSubview(swatch)
+            return swatch
+        }
+        setAccessibilityElement(true)
+        setAccessibilityRole(.radioGroup)
+        setAccessibilityLabel("Tint colour")
+    }
+    required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
+
+    fileprivate func choose(_ name: String) {
+        let changed = name != selected
+        selected = name
+        onChange?(changed)
+    }
+
+    fileprivate final class Swatch: NSButton {
+        let name: String
+        weak var picker: NativeTintPicker?
+        init(name: String, picker: NativeTintPicker) {
+            self.name = name; self.picker = picker
+            super.init(frame: .zero)
+            isBordered = false
+            title = ""
+            toolTip = name == "Accent" ? "System accent colour" : name
+            setAccessibilityRole(.radioButton)
+            setAccessibilityLabel(toolTip)
+            target = self; action = #selector(pick)
+            focusRingType = .exterior
+        }
+        required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
+        override var intrinsicContentSize: NSSize { NSSize(width: 20, height: 20) }
+        @objc private func pick() { picker?.choose(name) }
+        override func accessibilityValue() -> Any? { picker?.selected == name ? 1 : 0 }
+        override var focusRingMaskBounds: NSRect { bounds }
+        override func drawFocusRingMask() { NSBezierPath(ovalIn: bounds).fill() }
+        override func draw(_ dirtyRect: NSRect) {
+            let isSelected = picker?.selected == name
+            let circle = bounds.insetBy(dx: 3, dy: 3)
+            if name == "Accent" {
+                // A wheel of colours, like the accent choice in System Settings.
+                let colors: [NSColor] = [.systemBlue, .systemPurple, .systemPink, .systemRed, .systemOrange, .systemYellow, .systemGreen]
+                NSGraphicsContext.saveGraphicsState()
+                NSBezierPath(ovalIn: circle).addClip()
+                for (index, color) in colors.enumerated() {
+                    let path = NSBezierPath()
+                    let center = NSPoint(x: circle.midX, y: circle.midY)
+                    path.move(to: center)
+                    path.appendArc(withCenter: center, radius: circle.width, startAngle: CGFloat(index) * 360 / 7, endAngle: CGFloat(index + 1) * 360 / 7)
+                    path.close()
+                    color.setFill(); path.fill()
+                }
+                NSGraphicsContext.restoreGraphicsState()
+            } else {
+                NativeDockStyle.swatch(named: name).setFill()
+                NSBezierPath(ovalIn: circle).fill()
+            }
+            NSColor.black.withAlphaComponent(0.12).setStroke()
+            let rim = NSBezierPath(ovalIn: circle.insetBy(dx: 0.25, dy: 0.25)); rim.lineWidth = 0.5; rim.stroke()
+            if isSelected {
+                NSColor.labelColor.withAlphaComponent(0.6).setStroke()
+                let ring = NSBezierPath(ovalIn: bounds.insetBy(dx: 0.75, dy: 0.75)); ring.lineWidth = 1.5; ring.stroke()
+            }
+        }
     }
 }
 #endif

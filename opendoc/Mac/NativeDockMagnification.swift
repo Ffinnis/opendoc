@@ -190,7 +190,7 @@ final class NativeDockMagnification: NSWindowController, NSMenuDelegate {
             let size = hoverLabel.fittingSize
             let anchor = visibleFrame(at: index)
             hoverLabel.frame = NSRect(x: min(max(8, anchor.midX - size.width / 2), surface.bounds.width - size.width - 8),
-                y: min(anchor.maxY + 10, surface.bounds.height - size.height - 4), width: size.width, height: size.height)
+                y: min(anchor.maxY + NativeDockStyle.labelGap, surface.bounds.height - size.height - 4), width: size.width, height: size.height)
             hoverLabel.isHidden = false
         } else { hoverLabel.isHidden = true }
     }
@@ -285,12 +285,13 @@ final class NativeDockMagnification: NSWindowController, NSMenuDelegate {
     private func showPress(_ pressed: Bool, at index: Int) {
         if pressed { pressedArtwork = visibleFrame(at: index) }
         let scale: CGFloat = pressed && !NativeMotion.reducesMotion
-            ? (tiles[index].item.kind == .widget ? 0.985 : 0.92) : 1
+            ? (tiles[index].item.kind == .widget ? NativeDockStyle.widgetPressScale : NativeDockStyle.pressScale) : 1
         let rect = pressedArtwork.insetBy(dx: pressedArtwork.width * (1 - scale) / 2,
                                           dy: pressedArtwork.height * (1 - scale) / 2)
         let duration: TimeInterval = NativeMotion.reducesMotion ? 0 : (pressed ? 0.1 : 0.22)
         moveArtwork(at: index, to: rect, duration: duration)
-        NativeMotion.animate(duration) { tiles[index].animationView.animator().alphaValue = pressed ? 0.72 : 1 }
+        guard tiles[index].item.kind != .widget else { return }
+        NativeMotion.animate(duration) { tiles[index].animationView.animator().alphaValue = pressed ? NativeDockStyle.pressAlpha : 1 }
     }
     func showDragSurface() {
         hoverLabel.isHidden = true

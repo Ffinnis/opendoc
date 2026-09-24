@@ -43,7 +43,7 @@ enum WidgetKind: String, Codable, CaseIterable {
 
     var detail: String {
         switch self {
-        case .clock: "Local time, updated every second."
+        case .clock: "Local time and today's date, always in view."
         case .calendar: "Today's date and a monthly calendar."
         case .focus: "A configurable focus timer with pause and reset."
         case .note: "A note you can read directly in the dock."
@@ -147,10 +147,14 @@ struct DockAppearance: Codable {
     var showLabels = true
     var glassStyle = "Regular"
     var glassTint: Double = 0
+    /// Colour of the glass tint; `glassTint` is its strength.
+    var tintColor = "Graphite"
+
+    static let tintColors = ["Graphite", "Accent", "Blue", "Purple", "Pink", "Red", "Orange", "Yellow", "Green"]
 
     init() {}
     enum CodingKeys: String, CodingKey {
-        case position, material, wallpaper, size, autoHide, showLabels, glassStyle, glassTint
+        case position, material, wallpaper, size, autoHide, showLabels, glassStyle, glassTint, tintColor
     }
     init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
@@ -162,6 +166,7 @@ struct DockAppearance: Codable {
         showLabels = try values.decode(Bool.self, forKey: .showLabels)
         glassStyle = try values.decodeIfPresent(String.self, forKey: .glassStyle) ?? "Regular"
         glassTint = try values.decodeIfPresent(Double.self, forKey: .glassTint) ?? 0
+        tintColor = try values.decodeIfPresent(String.self, forKey: .tintColor) ?? "Graphite"
     }
 }
 
@@ -191,6 +196,7 @@ struct DockArchive: Codable {
                   ["Glass", "Light", "Dark"].contains(profile.appearance.material),
                   ["Clear", "Regular"].contains(profile.appearance.glassStyle),
                   (0...1).contains(profile.appearance.glassTint),
+                  DockAppearance.tintColors.contains(profile.appearance.tintColor),
                   ["Meadow", "Dusk", "Ocean"].contains(profile.appearance.wallpaper) else { throw StoreError.invalidArchive }
             guard profile.items.allSatisfy({ item in
                 if item.kind == .folder {

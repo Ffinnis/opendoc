@@ -172,14 +172,15 @@ final class NativeAgentCommands {
             "widget.add": "{dockID, kind, patch} -> created widget",
             "widget.update": "{itemID, patch} -> updated widget",
             "widget.remove": "{itemID} -> removed widget",
-            "widget.preview": "{custom} -> value, detail, optional progress; may fetch HTTPS or run an explicitly enabled local command",
+            "widget.preview": "{custom} -> value, detail, optional progress, style, tint, symbol, apps; may fetch HTTPS or run an explicitly enabled local command",
             "dock.update": "{dockID, patch?, visible?} -> updated dock; patch: name, symbol, color, appearance"
          ],
          "widgetKinds": WidgetKind.allCases.map(\.rawValue),
          "widgetPatchFields": ["title", "symbol", "color", "url", "note", "checklist", "count", "countDay", "timeZone", "duration", "remaining", "startedAt", "deadline", "web", "custom"],
          "widgetDefaults": try object(DockItem.widget(.custom)),
          "customTemplates": ["counter": try object(CustomWidgetConfiguration()), "water": try object(CustomWidgetConfiguration.water()), "webpage": try object(CustomWidgetConfiguration.webpage()), "command": try object(CustomWidgetConfiguration.commandTemplate()), "codex": try object(CustomWidgetConfiguration.codexBar(provider: "codex")), "claude": try object(CustomWidgetConfiguration.codexBar(provider: "claude"))],
-         "appearance": ["position": ["Bottom", "Left", "Right"], "material": ["Glass", "Light", "Dark"], "size": ["minimum": 36, "maximum": 88], "glassStyle": ["Clear", "Regular"], "glassTint": ["minimum": 0, "maximum": 1], "autoHide": "boolean", "showLabels": "boolean", "wallpaper": ["Meadow", "Dusk", "Ocean"]],
+         "customOutput": ["value": "text or number", "detail": "optional text", "progress": "optional number 0...1", "style": CustomWidgetOutput.styles, "tint": CustomWidgetOutput.tints, "symbol": "optional SF Symbol name", "apps": "optional list of up to 4 bundle identifiers", "unsupportedPresentation": "ignored"],
+         "appearance": ["position": ["Bottom", "Left", "Right"], "material": ["Glass", "Light", "Dark"], "size": ["minimum": 36, "maximum": 88], "glassStyle": ["Clear", "Regular"], "glassTint": ["minimum": 0, "maximum": 1], "tintColor": DockAppearance.tintColors, "autoHide": "boolean", "showLabels": "boolean", "wallpaper": ["Meadow", "Dusk", "Ocean"]],
          "notes": ["UUIDs come from state. No name matching.", "Patch objects merge; arrays, state and initialState replace. null clears optional fields.", "Unknown fields are rejected. IDs and widget kind cannot be changed.", "dryRun validates mutations without saving. Preview executes scripts and may fetch its URL or execute an explicitly enabled local command.", "ifRevision rejects edits based on stale state. No automatic retries of mutations.", "Dates use JSONEncoder seconds since 2001-01-01 UTC.", "UI is native and constrained to supported appearance fields; no arbitrary CSS or native view injection."]]
     }
 }

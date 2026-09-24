@@ -72,7 +72,39 @@ final class WidgetCommandTests: XCTestCase {
         XCTAssertEqual(result.output?.value, "89% left")
         XCTAssertEqual(result.output?.detail, "Codex · Weekly")
         XCTAssertEqual(result.output?.progress, 0.89)
+        XCTAssertEqual(result.output?.style, "ring")
+        XCTAssertEqual(result.output?.tint, "level")
+        XCTAssertEqual(result.output?.apps, ["com.openai.codex", "com.openai.chat"])
+        XCTAssertEqual(result.output?.symbol, "chevron.left.forwardslash.chevron.right")
         XCTAssertThrowsError(try NativeCustomScript.evaluate(.init(script: template.renderScript, state: [:], input: .init(text: #"[{"provider":"codex","usage":{}}]"#), action: false)))
+    }
+
+    func testRenderPresentationFieldsAreValidated() throws {
+        func render(_ script: String) throws -> CustomWidgetOutput? {
+            try NativeCustomScript.evaluate(.init(script: script, state: [:], input: .init(), action: false)).output
+        }
+        let output = try render("return { value: '40%', progress: 0.4, style: 'ring', tint: 'level', symbol: 'drop.fill', apps: ['com.apple.Safari'] };")
+        XCTAssertEqual(output, CustomWidgetOutput(value: "40%", progress: 0.4, style: "ring", tint: "level", symbol: "drop.fill", apps: ["com.apple.Safari"]))
+        XCTAssertEqual(try render("return { value: 1, style: null, tint: null };"), CustomWidgetOutput(value: "1"), "Presentation stays optional")
+        // Unsupported values are ignored so command JSON that reuses these names keeps rendering.
+        for script in [
+            "return { value: 1, style: 'donut' };",
+            "return { value: 1, tint: '#ff0000' };",
+            "return { value: 1, symbol: 'BRK-B' };",
+            "return { value: 1, symbol: 3 };",
+            "return { value: 1, apps: 'com.apple.Safari' };",
+            "return { value: 1, apps: [] };",
+            "return { value: 1, apps: ['/Applications/Safari.app'] };"
+        ] {
+            XCTAssertEqual(try render(script), CustomWidgetOutput(value: "1"), script)
+        }
+        XCTAssertEqual(try render("return { value: 1, apps: ['a.b', 'bad id', 'c.d', 'e.f', 'g.h', 'i.j'] };")?.apps, ["a.b", "c.d", "e.f"],
+                       "At most four entries are read and invalid ones are skipped")
+    }
+
+    func testOutputWithoutPresentationStillDecodes() throws {
+        let decoded = try JSONDecoder().decode(CustomWidgetOutput.self, from: Data(#"{"value":"3","detail":"Today","progress":0.5}"#.utf8))
+        XCTAssertEqual(decoded, CustomWidgetOutput(value: "3", detail: "Today", progress: 0.5))
     }
 
     func testRefreshKeepsLastValueAfterCommandFailure() async throws {

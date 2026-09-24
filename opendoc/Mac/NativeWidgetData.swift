@@ -31,6 +31,16 @@ final class NativeWidgetData {
         return URLSession(configuration: configuration)
     }()
 
+    /// The last reading, without sampling or starting a request.
+    func cachedReading(for item: DockItem) -> Reading? {
+        switch item.widget {
+        case .cpu: cpu.value == "…" ? nil : cpu
+        case .memory: memory.value == "…" ? nil : memory
+        case .webValue: cache[item.id].flatMap { $0.reading.value == "…" ? nil : $0.reading }
+        default: nil
+        }
+    }
+
     func reading(for item: DockItem) -> Reading {
         if item.widget == .webValue { return webReading(item) }
         sampleSystem()

@@ -8,7 +8,6 @@ final class NativeWidgetLibrary: NSWindowController, NSTableViewDataSource, NSTa
     private let preview = NSStackView()
     private let addButton = NSButton(title: "Add Widget", target: nil, action: nil)
     private var results = WidgetKind.allCases
-    private var refreshTimer: Timer?
     private let onAdd: (WidgetKind) -> Void
 
     init(profileName: String, onAdd: @escaping (WidgetKind) -> Void) {
@@ -51,30 +50,23 @@ final class NativeWidgetLibrary: NSWindowController, NSTableViewDataSource, NSTa
         root.addSubview(addButton)
         table.reloadData(); table.selectRowIndexes(IndexSet(integer: 0), byExtendingSelection: false)
         panel.initialFirstResponder = search
-        refreshTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated {
-                self?.preview.arrangedSubviews.compactMap { $0 as? NativeDockItemView }.forEach { $0.refreshIfNeeded(at: Date()) }
-            }
-        }
     }
-    deinit { refreshTimer?.invalidate() }
-    override func close() { refreshTimer?.invalidate(); super.close() }
-    func windowWillClose(_ notification: Notification) { refreshTimer?.invalidate() }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
     func numberOfRows(in tableView: NSTableView) -> Int { results.count }
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
         let kind = results[row]
         let cell = NSTableCellView()
-        let icon = NSImageView(image: NSImage(systemSymbolName: kind.symbol, accessibilityDescription: nil) ?? NSImage())
-        icon.contentTintColor = .controlAccentColor
-        icon.frame = NSRect(x: 8, y: 14, width: 24, height: 24)
+        let badge = NativeCardBadge()
+        badge.symbol = kind.symbol
+        badge.color = kind.accent
+        badge.frame = NSRect(x: 6, y: 10, width: 32, height: 32)
         let title = NSTextField(labelWithString: kind.title); title.font = .systemFont(ofSize: 13, weight: .medium)
-        title.frame = NSRect(x: 44, y: 26, width: 210, height: 18)
+        title.frame = NSRect(x: 48, y: 26, width: 206, height: 18)
         let subtitle = NSTextField(labelWithString: kind.category); subtitle.font = .systemFont(ofSize: 11); subtitle.textColor = .secondaryLabelColor
-        subtitle.frame = NSRect(x: 44, y: 8, width: 210, height: 15)
-        cell.addSubview(icon); cell.addSubview(title); cell.addSubview(subtitle)
-        cell.textField = title; cell.imageView = icon
+        subtitle.frame = NSRect(x: 48, y: 8, width: 206, height: 15)
+        cell.addSubview(badge); cell.addSubview(title); cell.addSubview(subtitle)
+        cell.textField = title
         return cell
     }
     func controlTextDidChange(_ obj: Notification) { filter() }
@@ -100,12 +92,13 @@ final class NativeWidgetLibrary: NSWindowController, NSTableViewDataSource, NSTa
         let kind = results[table.selectedRow]
         let title = NSTextField(labelWithString: kind.title); title.font = .systemFont(ofSize: 22, weight: .semibold)
         preview.addArrangedSubview(title)
-        let tile = NativeDockItemView(item: .widget(kind), iconSize: 44, vertical: false)
-        tile.setAccessibilityRole(.image)
-        tile.setAccessibilityHelp("Widget preview")
-        tile.widthAnchor.constraint(equalToConstant: 190).isActive = true
-        tile.heightAnchor.constraint(equalToConstant: 64).isActive = true
-        preview.addArrangedSubview(tile)
+        // The widget at the size and on the glass it will have in the dock.
+        let dock = NativeDockPreview(frame: NSRect(x: 0, y: 0, width: 310, height: 116))
+        dock.setAccessibilityLabel("\(kind.title) widget preview")
+        dock.widthAnchor.constraint(equalToConstant: 310).isActive = true
+        dock.heightAnchor.constraint(equalToConstant: 116).isActive = true
+        preview.addArrangedSubview(dock)
+        dock.show([.widget(kind)], appearance: DockAppearance(), iconSize: 60)
         let description = NSTextField(wrappingLabelWithString: kind.detail)
         description.textColor = .secondaryLabelColor; description.font = .systemFont(ofSize: 13)
         description.widthAnchor.constraint(equalToConstant: 310).isActive = true

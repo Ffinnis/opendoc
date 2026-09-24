@@ -38,6 +38,27 @@ return {
 };
 ```
 
+To make a widget stand out, return optional presentation fields as well:
+
+- `style`: `'ring'` draws progress as a ring, like an activity ring, with the value beside it. `'bar'` is the default.
+- `tint`: a colour (`blue`, `purple`, `pink`, `red`, `orange`, `yellow`, `green`, `teal`, `indigo`, `gray`) or `'level'`, which turns green, then yellow, then red as progress falls. Useful for quotas.
+- `symbol`: an SF Symbol name, such as `'drop.fill'`. It replaces the widget's glyph and appears in the ring when no app icon is shown.
+- `apps`: up to four bundle identifiers. The icon of the first installed app is shown in the ring. Open Doc only reads the icon; it never opens the app.
+
+Values Open Doc does not support, such as an unknown style or a colour code, are ignored and the widget renders as usual.
+
+```js
+return {
+  value: '72% left',
+  detail: 'Codex · Weekly · 6d',
+  progress: 0.72,
+  style: 'ring',
+  tint: 'level',
+  apps: ['com.openai.codex'],
+  symbol: 'chevron.left.forwardslash.chevron.right'
+};
+```
+
 Add a button with an action that returns the updated state:
 
 ```js
@@ -59,7 +80,7 @@ The widget reads the HTML returned by the server. It does not run the site's Jav
 
 Web responses are limited to 1 MiB and refresh every 1 to 60 minutes. JavaScript display functions and button actions stop after two seconds, can save up to 32 numeric state entries, and have no file, shell, or network APIs. Local commands run separately, as described below. Open Doc does not bundle Node.js.
 
-Custom widgets use the app's existing value, detail, progress, and button layout. They cannot add arbitrary UI or embed Apple desktop widgets. Dedicated stock, weather, and media playback integrations are not available.
+Custom widgets use the app's value, detail, progress, ring, and button layouts. They cannot add arbitrary UI or embed Apple desktop widgets. Dedicated stock, weather, and media playback integrations are not available.
 
 ## Run Bash, Node, or another local command
 

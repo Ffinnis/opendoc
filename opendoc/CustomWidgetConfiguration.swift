@@ -116,7 +116,14 @@ struct CustomWidgetConfiguration: Codable, Equatable, Sendable {
         const reset = window.resetsAt ? Date.parse(window.resetsAt) : NaN;
         const minutes = Math.max(0, Math.ceil((reset - Date.now()) / 60000));
         const when = Number.isFinite(minutes) ? (minutes >= 1440 ? Math.ceil(minutes / 1440) + 'd' : minutes >= 60 ? Math.floor(minutes / 60) + 'h ' + minutes % 60 + 'm' : minutes + 'm') : '';
-        return { value: Math.round(remaining) + '% left', detail: '\(provider == "claude" ? "Claude" : "Codex") · ' + label + (when ? ' · ' + when : ''), progress: remaining / 100 };
+        return {
+          value: Math.round(remaining) + '% left',
+          detail: '\(provider == "claude" ? "Claude" : "Codex") · ' + label + (when ? ' · ' + when : ''),
+          progress: remaining / 100,
+          style: 'ring', tint: 'level',
+          apps: [\(provider == "claude" ? "'com.anthropic.claudefordesktop'" : "'com.openai.codex', 'com.openai.chat'")],
+          symbol: '\(provider == "claude" ? "sparkle" : "chevron.left.forwardslash.chevron.right")'
+        };
         """
         return result
     }
@@ -131,6 +138,22 @@ struct CustomWidgetOutput: Codable, Equatable, Sendable {
     var value: String
     var detail: String = ""
     var progress: Double?
+    /// Optional presentation, all chosen by the display function:
+    /// `style` "ring" or "bar", `tint` a named colour or "level" (green, then
+    /// yellow, then red as progress falls), `symbol` an SF Symbol name, and
+    /// `apps` bundle identifiers whose installed icon is shown, first match wins.
+    var style: String?
+    var tint: String?
+    var symbol: String?
+    var apps: [String]?
+
+    nonisolated static let styles = ["ring", "bar"]
+    nonisolated static let tints = ["level", "blue", "purple", "pink", "red", "orange", "yellow", "green", "teal", "indigo", "gray"]
+
+    nonisolated init(value: String, detail: String = "", progress: Double? = nil, style: String? = nil, tint: String? = nil, symbol: String? = nil, apps: [String]? = nil) {
+        self.value = value; self.detail = detail; self.progress = progress
+        self.style = style; self.tint = tint; self.symbol = symbol; self.apps = apps
+    }
 }
 
 enum CustomWidgetError: LocalizedError {

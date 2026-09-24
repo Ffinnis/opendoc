@@ -120,6 +120,6 @@ enum NativeDockWave {
         CATransaction.commit()
     }
 
-    static var timingFunction: CAMediaTimingFunction { CAMediaTimingFunction(controlPoints: 0.22, 0.65, 0.3, 1) }
+    static var timingFunction: CAMediaTimingFunction { NativeMotion.tracking }
 }
 #endif

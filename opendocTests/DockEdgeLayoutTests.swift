@@ -20,7 +20,7 @@ final class DockEdgeLayoutTests: XCTestCase {
                     NativeDockController.length(of: $0, iconSize: size, vertical: vertical)
                 }, thickness: 110, vertical: vertical)
                 let end = frames.last.map { vertical ? $0.maxY : $0.maxX } ?? 0
-                XCTAssertLessThanOrEqual(end + 3 + 38, available, "Settings must fit too")
+                XCTAssertLessThanOrEqual(end + 3 + NativeDockStyle.trailingLength, available, "Settings must fit too")
                 XCTAssertEqual(NativeDockController.fittingIconSize(items: items, requestedSize: 88,
                     vertical: vertical, availableLength: 5000), 88, "Larger displays restore the requested size")
             }
@@ -37,7 +37,7 @@ final class DockEdgeLayoutTests: XCTestCase {
         for vertical in [false, true] {
             let size = NativeDockController.fittingIconSize(items: items, requestedSize: 60,
                 vertical: vertical, availableLength: 1440)
-            let length = 46 + items.reduce(CGFloat.zero) {
+            let length = 8 + NativeDockStyle.trailingLength + items.reduce(CGFloat.zero) {
                 $0 + NativeDockController.length(of: $1, iconSize: size, vertical: vertical) + 3
             }
             XCTAssertLessThanOrEqual(length, 1440)

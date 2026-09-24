@@ -18,7 +18,11 @@ final class NativeCustomWidgetView: NSView {
     private let live = NSStackView()
     private let amount = NSTextField(labelWithString: "")
     private let detail = NSTextField(wrappingLabelWithString: "")
-    private let progress = NSProgressIndicator()
+    private let bar = NativeCardBar()
+    private let ring = NativeCardRing()
+    private let ringRow = NSStackView()
+    private var showsRing = false
+    private var liveHeight: CGFloat { showsRing ? 330 : 230 }
     private let buttons = NSStackView()
     private let liveStatus = NSTextField(wrappingLabelWithString: "")
     private let scroll = NSScrollView()
@@ -45,25 +49,29 @@ final class NativeCustomWidgetView: NSView {
         draft = item.custom ?? CustomWidgetConfiguration()
         editing = item.custom == nil
         super.init(frame: .zero)
-        ownHeight = heightAnchor.constraint(equalToConstant: editing ? 540 : 230); ownHeight.isActive = true
+        ownHeight = heightAnchor.constraint(equalToConstant: editing ? 540 : liveHeight); ownHeight.isActive = true
         tabs.target = self; tabs.action = #selector(changeTab)
         tabs.selectedSegment = editing ? 1 : 0
         addSubview(tabs)
         live.orientation = .vertical; live.alignment = .leading; live.spacing = 14
-        amount.font = .monospacedDigitSystemFont(ofSize: 34, weight: .medium)
+        amount.font = NativeDockStyle.valueFont(34)
         detail.font = .systemFont(ofSize: 13); detail.textColor = .secondaryLabelColor
         liveStatus.font = .systemFont(ofSize: 11); liveStatus.textColor = .secondaryLabelColor
-        progress.isIndeterminate = false; progress.style = .bar; progress.minValue = 0; progress.maxValue = 1
+        ring.valueField.font = NativeDockStyle.valueFont(24)
+        ring.valueField.lineBreakMode = .byTruncatingTail
+        ringRow.orientation = .horizontal
+        ringRow.setViews([ring], in: .center)
+        ringRow.isHidden = true
         buttons.orientation = .horizontal; buttons.spacing = 8; buttons.distribution = .fillEqually
-        for view in [amount, detail, progress, buttons, liveStatus] { live.addArrangedSubview(view) }
-        for view in [detail, progress, buttons, liveStatus] { view.widthAnchor.constraint(equalTo: live.widthAnchor).isActive = true }
+        for view in [ringRow, amount, detail, bar, buttons, liveStatus] { live.addArrangedSubview(view) }
+        for view in [ringRow, detail, bar, buttons, liveStatus] { view.widthAnchor.constraint(equalTo: live.widthAnchor).isActive = true }
         addSubview(live)
         scroll.drawsBackground = false; scroll.hasVerticalScroller = true
         form.orientation = .vertical; form.alignment = .leading; form.spacing = 12
         scroll.documentView = form; addSubview(scroll)
         footer.orientation = .horizontal; footer.spacing = 10
-        footer.addArrangedSubview(NativeButton("Preview") { [weak self] in self?.preview() })
-        footer.addArrangedSubview(NativeButton("Save Widget") { [weak self] in self?.save() })
+        footer.addArrangedSubview(NativeCapsuleButton("Save Widget", style: .primary(WidgetKind.custom.accent)) { [weak self] in self?.save() })
+        footer.addArrangedSubview(NativeCapsuleButton("Preview") { [weak self] in self?.preview() })
         addSubview(footer)
         feedback.font = .systemFont(ofSize: 11); feedback.maximumNumberOfLines = 2
         addSubview(feedback)
@@ -103,23 +111,23 @@ final class NativeCustomWidgetView: NSView {
     }
     private func updateMode() {
         live.isHidden = editing; scroll.isHidden = !editing; footer.isHidden = !editing; feedback.isHidden = !editing
-        ownHeight.constant = editing ? 540 : 230
+        ownHeight.constant = editing ? 540 : liveHeight
         needsLayout = true; onResize?()
     }
     private func rebuildButtons() {
         buttons.arrangedSubviews.forEach { buttons.removeArrangedSubview($0); $0.removeFromSuperview() }
-        for action in item?.custom?.actions ?? [] {
-            let button = NativeButton(action.title) { [weak self] in self?.perform(action.id) }
+        for (index, action) in (item?.custom?.actions ?? []).enumerated() {
+            let button = NativeCapsuleButton(action.title, style: index == 0 ? .primary(WidgetKind.custom.accent) : .secondary) { [weak self] in self?.perform(action.id) }
             buttons.addArrangedSubview(button)
         }
         if let source = item?.custom?.source, source != .local {
-            buttons.addArrangedSubview(NativeButton("Refresh") { [weak self] in
+            buttons.addArrangedSubview(NativeCapsuleButton("Refresh") { [weak self] in
                 guard let self, let item else { return }
                 lastError = nil; NativeCustomWidgetData.shared.refresh(item); refreshLive()
             })
         }
         if buttons.arrangedSubviews.isEmpty {
-            buttons.addArrangedSubview(NativeButton("Configure Widget") { [weak self] in
+            buttons.addArrangedSubview(NativeCapsuleButton("Configure Widget", style: .primary(WidgetKind.custom.accent)) { [weak self] in
                 self?.tabs.selectedSegment = 1; self?.changeTab()
             })
         }
@@ -132,10 +140,27 @@ final class NativeCustomWidgetView: NSView {
     private func refreshLive() {
         guard let item else { return }
         let reading = NativeCustomWidgetData.shared.reading(for: item)
-        amount.stringValue = reading.output.value
-        detail.stringValue = reading.output.detail.isEmpty ? item.title : reading.output.detail
-        progress.isHidden = reading.output.progress == nil
-        progress.doubleValue = reading.output.progress ?? 0
+        let output = reading.output
+        let fraction = reading.isError ? nil : output.progress
+        let color = NativeWidgetPresentation.color(output.tint, progress: fraction, fallback: WidgetKind.custom.accent)
+        amount.stringValue = output.value
+        detail.stringValue = output.detail.isEmpty ? item.title : output.detail
+        bar.color = color
+        bar.fraction = fraction ?? 0
+        ring.color = color
+        ring.fraction = fraction ?? 0
+        ring.valueField.stringValue = output.value
+        ring.statusField.stringValue = output.detail
+        // A ring replaces the large value and bar; the detail moves inside it.
+        let ringStyle = output.style == "ring" && fraction != nil
+        ringRow.isHidden = !ringStyle
+        amount.isHidden = ringStyle
+        detail.isHidden = ringStyle
+        bar.isHidden = ringStyle || fraction == nil
+        if ringStyle != showsRing {
+            showsRing = ringStyle
+            if !editing { ownHeight.constant = liveHeight; onResize?() }
+        }
         liveStatus.stringValue = lastError ?? reading.status
         liveStatus.textColor = lastError != nil || reading.isError ? .systemOrange : .secondaryLabelColor
         buttons.arrangedSubviews.compactMap { $0 as? NSButton }.forEach { $0.isEnabled = !busy }
@@ -194,7 +219,7 @@ final class NativeCustomWidgetView: NSView {
         resetField = NSButton(checkboxWithTitle: "Reset state each day", target: nil, action: nil)
         resetField.state = draft.resetDaily ? .on : .off; add(resetField)
         renderField = code("Display function", value: draft.renderScript, height: 104)
-        help("Return { value, detail, progress }. Progress is optional, from 0 to 1. Use state for saved numbers. For commands, JSON.parse(input.text) reads stdout. For webpages, input.text is the first match and input.matches contains all matches.")
+        help("Return { value, detail, progress }. Progress is optional, from 0 to 1. Optional style: 'ring' or 'bar'; tint: a colour name or 'level' (green to red as progress falls); symbol: an SF Symbol name; apps: bundle identifiers whose icon appears in the ring. Use state for saved numbers. For commands, JSON.parse(input.text) reads stdout. For webpages, input.text is the first match and input.matches contains all matches.")
         for (index, action) in draft.actions.enumerated() {
             let title = field("Button \(index + 1)", value: action.title)
             let script = code("Button \(index + 1) action", value: action.script, height: 60)

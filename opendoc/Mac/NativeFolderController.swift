@@ -115,7 +115,7 @@ final class NativeFolderController: NSViewController, NSPopoverDelegate, NSTextF
         preferredContentSize = size
         popover.contentSize = size
         let title = NSTextField(string: folder.title)
-        title.font = .systemFont(ofSize: 17, weight: .semibold)
+        title.font = .systemFont(ofSize: 15, weight: .semibold)
         title.isBezeled = false; title.drawsBackground = false; title.delegate = self
         title.frame = NSRect(x: inset - 2, y: 20, width: gridWidth + 4, height: 24)
         title.lineBreakMode = .byTruncatingTail
@@ -154,10 +154,8 @@ final class NativeFolderController: NSViewController, NSPopoverDelegate, NSTextF
         let separator = NSBox(frame: NSRect(x: inset, y: footerTop, width: gridWidth, height: 1))
         separator.boxType = .separator
         view.addSubview(separator)
-        let add = NativeButton("Add Applications…") { [weak self] in self?.pickApplications() }
-        add.controlSize = .regular
-        add.font = .systemFont(ofSize: 13)
-        add.frame = NSRect(x: inset, y: footerTop + 13, width: 150, height: 28)
+        let add = NativeCapsuleButton("Add Applications…") { [weak self] in self?.pickApplications() }
+        add.frame = NSRect(x: inset, y: footerTop + 13, width: add.intrinsicContentSize.width, height: 28)
         view.addSubview(add)
         let count = NSTextField(labelWithString: children.count == 1 ? "1 app" : "\(children.count) apps")
         count.textColor = .secondaryLabelColor; count.font = .systemFont(ofSize: 11)
@@ -337,20 +335,20 @@ private final class FolderAppButton: NSButton {
     override func draw(_ dirtyRect: NSRect) {
         let focused = window?.firstResponder === self
         if hovered || isHighlighted || focused {
-            NSColor.labelColor.withAlphaComponent(isHighlighted ? 0.18 : focused ? 0.12 : 0.07).setFill()
-            NSBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 1), xRadius: 10, yRadius: 10).fill()
+            NSColor.labelColor.withAlphaComponent(isHighlighted ? 0.16 : focused ? 0.11 : 0.06).setFill()
+            NSBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 1), xRadius: 12, yRadius: 12).fill()
         }
-        image?.draw(in: NSRect(x: (bounds.width - 48) / 2, y: 2, width: 48, height: 48),
-                    from: .zero, operation: .sourceOver, fraction: isHighlighted ? 0.75 : 1,
+        let side: CGFloat = 52
+        image?.draw(in: NSRect(x: (bounds.width - side) / 2, y: 2, width: side, height: side),
+                    from: .zero, operation: .sourceOver, fraction: isHighlighted ? NativeDockStyle.pressAlpha : 1,
                     respectFlipped: true, hints: [.interpolation: NSImageInterpolation.high])
         if NativeApplications.isRunning(item) {
-            NSColor.secondaryLabelColor.setFill()
-            NSBezierPath(ovalIn: NSRect(x: bounds.midX - 1.5, y: 55, width: 3, height: 3)).fill()
+            NativeDockItemView.drawRunningDots(count: 1, centerX: bounds.midX, y: 57, width: bounds.width)
         }
         let paragraph = NSMutableParagraphStyle()
         paragraph.alignment = .center
         paragraph.lineBreakMode = .byWordWrapping
-        (title as NSString).draw(with: NSRect(x: 4, y: 65, width: bounds.width - 8, height: 30),
+        (title as NSString).draw(with: NSRect(x: 4, y: 66, width: bounds.width - 8, height: 30),
             options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine], attributes: [.font: NSFont.systemFont(ofSize: 12), .foregroundColor: NSColor.labelColor,
                              .paragraphStyle: paragraph], context: nil)
     }

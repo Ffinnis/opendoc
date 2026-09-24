@@ -286,11 +286,8 @@ final class NativeDockDragTests: XCTestCase {
         let originalParent = glass.superview
         let originalFrame = glass.frame
         let shelfSize = root.bounds.size
-        func image(in view: NSView) -> NSImageView? {
-            (view as? NSImageView) ?? view.subviews.compactMap { image(in: $0) }.first
-        }
-        let preview = try XCTUnwrap(image(in: glass))
-        let oldImage = preview.image
+        // Folder previews are rasterized at the magnified size so they stay sharp.
+        let oldImage = try XCTUnwrap(tile.folderArtwork)
         controller.previewMagnification()
         let overlay = try XCTUnwrap(controller.window?.childWindows?.first)
         let magnifier = try XCTUnwrap(overlay.windowController as? NativeDockMagnification)
@@ -315,7 +312,13 @@ final class NativeDockDragTests: XCTestCase {
         controller.reload()
         XCTAssertTrue(overlay.isVisible)
         XCTAssertFalse(overlay.childWindows?.isEmpty ?? true)
-        XCTAssertFalse(oldImage === preview.image)
+        // The picture itself must change: an emptied folder draws a folder symbol.
+        func pixels(_ image: AnyObject?) -> Data? {
+            guard let image, CFGetTypeID(image) == CGImage.typeID else { return nil }
+            return (image as! CGImage).dataProvider?.data as Data?
+        }
+        XCTAssertNotNil(pixels(oldImage))
+        XCTAssertNotEqual(pixels(oldImage), pixels(tile.folderArtwork))
         controller.endMagnification()
         XCTAssertTrue(controller.window?.contentView === root)
         XCTAssertTrue(glass.superview === originalParent)

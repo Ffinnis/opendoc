@@ -88,7 +88,36 @@ enum NativeCustomScript {
         let progress = (object["progress"] as? NSNumber)?.doubleValue
         guard progress?.isFinite != false else { throw CustomWidgetError.message("Progress must be a finite number between 0 and 1.") }
         return Response(output: CustomWidgetOutput(value: String(text.prefix(160)), detail: String((object["detail"] as? String ?? "").prefix(160)),
-                                                  progress: progress.map { min(1, max(0, $0)) }))
+                                                  progress: progress.map { min(1, max(0, $0)) },
+                                                  style: presentation(object["style"], allowed: CustomWidgetOutput.styles),
+                                                  tint: presentation(object["tint"], allowed: CustomWidgetOutput.tints),
+                                                  symbol: symbol(object["symbol"]), apps: apps(object["apps"])))
+    }
+
+    // Presentation fields are optional hints. A value the app does not
+    // support is ignored rather than failing the widget, so JSON printed by a
+    // command that happens to use these names keeps rendering.
+
+    nonisolated static func presentation(_ value: Any?, allowed: [String]) -> String? {
+        guard let text = value as? String, allowed.contains(text) else { return nil }
+        return text
+    }
+
+    nonisolated static func symbol(_ value: Any?) -> String? {
+        guard let text = value as? String, (1...64).contains(text.count),
+              text.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || $0 == ".") }) else { return nil }
+        return text
+    }
+
+    /// Bundle identifiers only; Open Doc shows the icon of an installed app and never launches it.
+    nonisolated static func apps(_ value: Any?) -> [String]? {
+        guard let list = value as? [Any] else { return nil }
+        let identifiers = list.prefix(4).compactMap { entry -> String? in
+            guard let text = entry as? String, (3...128).contains(text.count), text.contains("."),
+                  text.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "." || $0 == "-") }) else { return nil }
+            return text
+        }
+        return identifiers.isEmpty ? nil : identifiers
     }
 }
 #endif

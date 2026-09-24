@@ -21,6 +21,7 @@ final class AgentCommandTests: XCTestCase {
         let appearance = try JSONDecoder().decode(DockAppearance.self, from: legacy)
         XCTAssertEqual(appearance.glassStyle, "Regular")
         XCTAssertEqual(appearance.glassTint, 0)
+        XCTAssertEqual(appearance.tintColor, "Graphite", "Docks saved before tint colours keep their dark tint")
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("glass-\(UUID()).json")
         defer { try? FileManager.default.removeItem(at: url) }
         let store = DockStore(fileURL: url)
@@ -30,17 +31,36 @@ final class AgentCommandTests: XCTestCase {
             let result = await commands.handle(try JSONSerialization.data(withJSONObject: request))
             return (try JSONSerialization.jsonObject(with: result) as? [String: Any])?["ok"] as? Bool == true
         }
-        let accepted = try await update(["glassStyle": "Clear", "glassTint": 0.35])
+        let accepted = try await update(["glassStyle": "Clear", "glassTint": 0.35, "tintColor": "Blue"])
         XCTAssertTrue(accepted)
         let restored = DockStore(fileURL: url)
         XCTAssertEqual(restored.active.appearance.glassStyle, "Clear")
         XCTAssertEqual(restored.active.appearance.glassTint, 0.35)
+        XCTAssertEqual(restored.active.appearance.tintColor, "Blue")
         let before = try store.exportData()
-        for patch: [String: Any] in [["glassTint": -0.1], ["glassTint": 1.1], ["glassStyle": "Unknown"]] {
+        for patch: [String: Any] in [["glassTint": -0.1], ["glassTint": 1.1], ["glassStyle": "Unknown"], ["tintColor": "Teal"], ["tintColor": 3]] {
             let accepted = try await update(patch)
             XCTAssertFalse(accepted)
             XCTAssertEqual(try store.exportData(), before)
         }
+    }
+
+    func testSchemaAndHelpListEveryTintColour() async throws {
+        let help = try NativeAgentHelp.render(command: "dock.update", json: false)
+        for colour in DockAppearance.tintColors { XCTAssertTrue(help.contains(colour), colour) }
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("tint-schema-\(UUID()).json")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let commands = NativeAgentCommands(store: DockStore(fileURL: url), visible: { _ in false }, setVisible: { _, _ in })
+        let data = await commands.handle(try JSONSerialization.data(withJSONObject: ["op": "schema"]))
+        let response = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let result = try XCTUnwrap(response["result"] as? [String: Any])
+        let appearance = try XCTUnwrap(result["appearance"] as? [String: Any])
+        XCTAssertEqual(appearance["tintColor"] as? [String], DockAppearance.tintColors)
+        let output = try XCTUnwrap(result["customOutput"] as? [String: Any])
+        XCTAssertEqual(output["style"] as? [String], CustomWidgetOutput.styles)
+        XCTAssertEqual(output["tint"] as? [String], CustomWidgetOutput.tints)
+        let preview = try NativeAgentHelp.render(command: "widget.preview", json: false)
+        for field in ["style", "tint", "symbol", "apps"] { XCTAssertTrue(preview.contains(field), field) }
     }
 
     func testAgentEditsAreValidatedAndRevisionProtected() async throws {

@@ -26,7 +26,7 @@ Right-click an app in the dock or a folder for **New Window**. The option appear
 
 ## Appearance and auto-hide
 
-In Settings, select a dock and open **Appearance**. Choose its screen edge, icon size, material, and auto-hide behavior. Glass has **Clear** and **Regular** styles. Set Tint to **None** for no added tint, or increase it for a darker background. Earlier macOS versions use native blur instead of Liquid Glass.
+In Settings, select a dock and open **Appearance**. Choose its screen edge, icon size, material, and auto-hide behavior. Glass has **Clear** and **Regular** styles. Choose a tint colour (Graphite darkens the glass; the others add a soft colour, and Accent follows your system accent colour), then set its strength. A strength of **None** adds no tint. Earlier macOS versions use native blur instead of Liquid Glass.
 
 To reveal a hidden dock, pause the pointer at its screen edge. Move away to hide it. The dock stays open while you use a menu, drag an item, or interact with an open folder or widget. Motion follows the system's Reduce Motion setting.
 

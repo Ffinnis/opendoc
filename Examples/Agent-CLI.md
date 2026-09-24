@@ -75,7 +75,7 @@ The add response contains the new widget in `result`. Keep `result.id` for later
 
 ## Edit appearance
 
-This example validates settings for a bottom dock with clear glass and no added tint:
+This example validates settings for a bottom dock with clear glass and a soft blue tint:
 
 ```sh
 opendoc dock.update --input - --dry-run <<'JSON'
@@ -86,7 +86,8 @@ opendoc dock.update --input - --dry-run <<'JSON'
       "position": "Bottom",
       "material": "Glass",
       "glassStyle": "Clear",
-      "glassTint": 0,
+      "glassTint": 0.3,
+      "tintColor": "Blue",
       "size": 48,
       "autoHide": true
     }
@@ -105,7 +106,7 @@ opendoc widget.preview --input - <<'JSON'
 JSON
 ```
 
-Preview returns the displayed value, detail, and optional progress. A webpage preview may fetch its URL, even with `--dry-run`. It never saves the widget. See [Widgets](../docs/Widgets.md) for script inputs and [USD/RUB](USD-RUB.md) for a webpage example.
+Preview returns the displayed value, detail, and optional progress, style, tint, symbol, and apps. A webpage preview may fetch its URL, even with `--dry-run`. It never saves the widget. See [Widgets](../docs/Widgets.md) for script inputs and [USD/RUB](USD-RUB.md) for a webpage example.
 
 ## Add a command widget
 
@@ -133,7 +134,7 @@ Preview returns the displayed value, detail, and optional progress. A webpage pr
 }
 ```
 
-The script must print JSON such as `{"value":"72% left","detail":"Quota","progress":0.72}`. Arguments are literal, without shell expansion. Use your installed Node executable to run a `.js` file. Commands have a 64 KiB output limit and a 1–25 second timeout.
+The script must print JSON such as `{"value":"72% left","detail":"Quota","progress":0.72}`. Add `"style":"ring","tint":"level"` to show the quota as a ring that turns yellow and then red as it runs low; see [Widgets](../docs/Widgets.md) for `symbol` and `apps`. Arguments are literal, without shell expansion. Use your installed Node executable to run a `.js` file. Commands have a 64 KiB output limit and a 1–25 second timeout.
 
 `widget.add` and `widget.update` with `--dry-run` validate without executing or saving. **`widget.preview` executes an enabled command, even with `--dry-run`.** Saving an enabled widget allows background refresh to execute it. Commands run with the user's file and network access, separately from the restricted display function. See [Widgets](../docs/Widgets.md#run-bash-node-or-another-local-command) for runtime details.
 

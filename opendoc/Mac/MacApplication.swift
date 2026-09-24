@@ -374,7 +374,7 @@ enum NativeApplications {
                         NSBezierPath(roundedRect: rect, xRadius: 3, yRadius: 3).fill()
                         let text = "+\(overflow)" as NSString
                         let attributes: [NSAttributedString.Key: Any] = [
-                            .font: NSFont.systemFont(ofSize: 7, weight: .semibold),
+                            .font: NSFont.systemFont(ofSize: 8, weight: .semibold),
                             .foregroundColor: NSColor.labelColor
                         ]
                         let size = text.size(withAttributes: attributes)

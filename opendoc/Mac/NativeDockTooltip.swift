@@ -19,10 +19,10 @@ final class NativeDockTooltip: NSVisualEffectView {
         blendingMode = .behindWindow
         state = .active
         wantsLayer = true
-        layer?.cornerRadius = 8
+        layer?.cornerRadius = 9
         layer?.cornerCurve = .continuous
         layer?.masksToBounds = true
-        label.font = .toolTipsFont(ofSize: 13)
+        label.font = .systemFont(ofSize: 12.5, weight: .medium)
         label.textColor = .labelColor
         label.alignment = .center
         label.lineBreakMode = .byTruncatingTail
@@ -62,14 +62,17 @@ final class NativeDockHoverLabel {
         panel.contentView = tooltip
     }
 
-    var isShown: Bool { panel.isVisible }
+    /// Fading out still counts as hidden, so a new item shows immediately.
+    var isShown: Bool { panel.isVisible && itemID != nil }
+    private var generation = 0
+    private var fadingOut = false
 
     /// `anchor` is the item's frame in screen coordinates.
     func show(_ title: String, itemID: UUID, anchor: NSRect, edge: String, in parent: NSWindow) {
         guard !title.isEmpty else { hide(); return }
         tooltip.title = title
         let size = tooltip.fittingSize
-        let gap: CGFloat = 8
+        let gap = NativeDockStyle.labelGap
         let origin: NSPoint
         switch edge {
         case "Left": origin = NSPoint(x: anchor.maxX + gap, y: anchor.midY - size.height / 2)
@@ -89,15 +92,30 @@ final class NativeDockHoverLabel {
             self.parent = parent
         }
         self.itemID = itemID
-        if !panel.isVisible { panel.orderFrontRegardless() }
+        generation += 1
+        // The model alpha already reads 0 or 1 during a fade, so track the
+        // fade itself: a label shown while fading out must fade back in.
+        if !panel.isVisible || fadingOut {
+            if !panel.isVisible { panel.alphaValue = 0; panel.orderFrontRegardless() }
+            fadingOut = false
+            NativeMotion.animate(0.12) { panel.animator().alphaValue = 1 }
+        }
     }
 
     func hide() {
         itemID = nil
-        guard panel.isVisible || panel.parent != nil else { return }
-        parent?.removeChildWindow(panel)
-        parent = nil
-        panel.orderOut(nil)
+        guard !fadingOut, panel.isVisible || panel.parent != nil else { return }
+        fadingOut = true
+        generation += 1
+        let current = generation
+        NativeMotion.animate(0.1) { panel.animator().alphaValue = 0 } completion: { [weak self] in
+            // A label shown again during the fade keeps its window.
+            guard let self, self.generation == current else { return }
+            self.fadingOut = false
+            self.parent?.removeChildWindow(self.panel)
+            self.parent = nil
+            self.panel.orderOut(nil)
+        }
     }
 }
 #endif

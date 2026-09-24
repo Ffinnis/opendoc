@@ -27,6 +27,15 @@ final class NativeCustomWidgetData {
         return URLSession(configuration: config)
     }()
 
+    /// Whether this widget has been read, which starts its script or command.
+    func isTracking(_ itemID: UUID) -> Bool { cache[itemID] != nil }
+
+    /// The last reading, without running the widget's script or command.
+    func cachedReading(for item: DockItem) -> Reading? {
+        guard let reading = cache[item.id]?.reading, reading.output.value != "…" else { return nil }
+        return reading
+    }
+
     func reading(for item: DockItem) -> Reading {
         guard let config = item.custom else { return Reading(output: CustomWidgetOutput(value: item.note, detail: item.title), status: "Choose a template to make this widget interactive.") }
         let day = DockItem.dayKey()
