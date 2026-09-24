@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.3.0
+
+- Magnify the dock like the system Dock. Icons near the pointer grow, the row makes room for them, and the shelf widens around it. The icon under the pointer stays under the pointer.
+- Bounce an app's icon while it launches, and show the system poof when an item is removed from the dock.
+- Open a gap for a dragged item as you move it along the dock. The item settles into its new place or into the folder it joins.
+- Keep the dock's shadow while it is magnified, and keep magnified icons sharp.
+- Use the same continuous corners for widgets, folders, and app icons. Folders use a flat tile instead of glass layered on the dock's glass.
+- Follow light and dark appearance on macOS versions before Tahoe, with a thin edge highlight on the shelf.
+- Show item names beside side docks and when Reduce Motion is on, without enlarging icons.
+- Show the dock's settings button only while the pointer is over the dock.
+
 ## 1.2.0
 
 - Create programmable dock widgets using Bash, Node.js, or another local executable. Commands return JSON for the widget's value, detail, and progress bar.

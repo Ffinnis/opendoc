@@ -364,12 +364,12 @@ final class opendocTests: XCTestCase {
         for distance in stride(from: 120.0, through: 0, by: -1) {
             let result = NativeDockWave.layout(base: base, magnifiable: kinds,
                 pointerX: base[3].midX, pointerY: base[3].maxY + distance)
-            XCTAssertEqual(result[2], base[2], "Widgets remain anchored")
+            XCTAssertEqual(result[2].size, base[2].size, "Widgets keep their size")
             XCTAssertGreaterThanOrEqual(result[3].width, previous)
             XCTAssertLessThan(result[3].width - previous, 0.3, "Crossing the row edge must not jump in size")
             previous = result[3].width
         }
-        XCTAssertEqual(previous, base[3].width * 1.5, accuracy: 0.0001)
+        XCTAssertEqual(previous, base[3].width * (1 + NativeDockWave.maximumGrowth), accuracy: 0.0001)
     }
 
     func testReducedMotionOpensWidgetOnRestingDock() throws {

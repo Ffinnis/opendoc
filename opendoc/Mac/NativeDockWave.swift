@@ -2,11 +2,19 @@
 import AppKit
 import QuartzCore
 
-/// Lifts app artwork inside fixed groups while keeping widgets anchored.
+/// Magnifies app artwork the way the system Dock does: icons near the pointer
+/// grow, the row spreads out to make room, and the shelf widens around it.
 enum NativeDockWave {
+    /// Pointer tracking retargets on every mouse event. Short ease-out curves
+    /// start at full speed from the visible position, so icons follow the
+    /// pointer without the start-from-rest lag a retargeted spring has.
     static let entryDuration: TimeInterval = 0.16
     static let trackingDuration: TimeInterval = 0.085
-    static let exitDuration: TimeInterval = 0.16
+    static let exitDuration: TimeInterval = 0.18
+    /// The largest icon is this much wider than at rest.
+    static let maximumGrowth: CGFloat = 0.3
+    /// Distance from the pointer over which magnification fades to zero.
+    static let reach: CGFloat = 120
 
     static func overlayFrame(parent: CGRect, screen: CGRect) -> CGRect {
         let width = min(screen.width, parent.width + 240)
@@ -14,50 +22,63 @@ enum NativeDockWave {
                       y: parent.minY, width: width, height: parent.height + 120)
     }
 
-    /// Widgets and the shelf are anchors. Each uninterrupted app group uses its
-    /// own inter-icon space for magnification, without pushing a widget or moving
-    /// the shelf edges. In tight groups, lift supplies feedback without overlap.
+    /// Widgets keep their size but slide with the row. Every icon grows by a
+    /// cosine falloff of its distance to the pointer and the gaps between items
+    /// are preserved. Like the system Dock, the point of the row under the
+    /// pointer stays under it, so the row grows on both sides of the pointer
+    /// and the hovered icon never drifts away. Beyond either end of the row,
+    /// that end stays put.
     static func layout(base: [CGRect], magnifiable: [Bool], pointerX: CGFloat?, pointerY: CGFloat?) -> [CGRect] {
-        guard base.count == magnifiable.count, let x = pointerX else {
+        guard base.count == magnifiable.count, let x = pointerX, !base.isEmpty else {
             return base
         }
         let growth = base.indices.map { index -> CGFloat in
             guard magnifiable[index] else { return 0 }
             let rect = base[index]
             let verticalDistance = pointerY.map { max(0, rect.minY - $0, $0 - rect.maxY) } ?? 0
-            let distance = min(1, hypot(x - rect.midX, verticalDistance) / 120)
-            return rect.width * 0.5 * (1 + cos(distance * .pi)) / 2
+            let distance = min(1, hypot(x - rect.midX, verticalDistance) / reach)
+            return rect.width * maximumGrowth * (1 + cos(distance * .pi)) / 2
         }
+        guard growth.contains(where: { $0 > 0 }) else { return base }
         var items = base
-        var start = 0
-        while start < base.count {
-            guard magnifiable[start] else { start += 1; continue }
-            var end = start + 1
-            while end < base.count, magnifiable[end] { end += 1 }
-            let group = start..<end
-            // Keep at least four points of the existing gaps. A small group can
-            // still lift naturally even when there is no room to grow sideways.
-            let capacity = group.dropLast().map { max(0, base[$0 + 1].minX - base[$0].maxX - 4) }
-            let room = capacity.reduce(0, +)
-            let requested = group.reduce(CGFloat.zero) { $0 + growth[$1] }
-            let scale = requested > 0 ? min(1, room / requested) : 0
-            let used = requested * scale
-            var cursor = base[start].minX
-            for index in group {
-                let extra = growth[index] * scale
-                let influence = growth[index] / max(1, base[index].width) * 2
-                items[index] = CGRect(x: cursor, y: base[index].minY + influence * 14,
-                    width: base[index].width + extra,
-                    height: base[index].height * (1 + extra / max(1, base[index].width)))
-                cursor = items[index].maxX
-                if index + 1 < end {
-                    let gap = base[index + 1].minX - base[index].maxX
-                    cursor += gap - (room > 0 ? capacity[index - start] * used / room : 0)
-                }
-            }
-            start = end
+        var cursor = base[0].minX
+        for index in base.indices {
+            let rect = base[index]
+            let extra = growth[index]
+            items[index] = CGRect(x: cursor, y: rect.minY, width: rect.width + extra,
+                                  height: rect.height + extra * rect.height / max(1, rect.width))
+            cursor = items[index].maxX
+            if index + 1 < base.count { cursor += base[index + 1].minX - rect.maxX }
         }
-        return items
+        let shift = x - magnifiedPosition(of: x, base: base, magnified: items)
+        return items.map { $0.offsetBy(dx: shift, dy: 0) }
+    }
+
+    /// Where a resting x coordinate lands in an unshifted magnified row. Items
+    /// scale their interior; gaps keep their width.
+    static func magnifiedPosition(of x: CGFloat, base: [CGRect], magnified: [CGRect]) -> CGFloat {
+        let s = min(max(x, base[0].minX), base[base.count - 1].maxX)
+        for index in base.indices {
+            let rect = base[index]
+            if s <= rect.maxX {
+                if s >= rect.minX {
+                    return magnified[index].minX + (s - rect.minX) * magnified[index].width / max(1, rect.width)
+                }
+                // In the gap before this item.
+                return magnified[index].minX - (rect.minX - s)
+            }
+        }
+        return magnified[magnified.count - 1].maxX
+    }
+
+    /// Shifts a magnified layout so it stays inside `bounds` at screen edges.
+    static func clamp(_ frames: [CGRect], to bounds: CGRect, inset: CGFloat) -> [CGRect] {
+        guard let first = frames.first, let last = frames.last else { return frames }
+        var shift: CGFloat = 0
+        if first.minX < bounds.minX + inset { shift = bounds.minX + inset - first.minX }
+        else if last.maxX > bounds.maxX - inset { shift = bounds.maxX - inset - last.maxX }
+        guard shift != 0 else { return frames }
+        return frames.map { $0.offsetBy(dx: shift, dy: 0) }
     }
 
     static func hitRect(artwork: CGRect, tileWidth: CGFloat) -> CGRect {

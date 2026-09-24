@@ -2,14 +2,18 @@
 import AppKit
 import QuartzCore
 
-/// Enlarges the window around the existing dock hierarchy. Icons, folder glass,
+/// Enlarges the window around the existing dock hierarchy. Icons, folder tiles,
 /// and widget content remain the same native views throughout hover and hiding.
+/// The shelf material widens with the row, and the overlay carries the window
+/// shadow so the dock never loses it while magnified.
 final class NativeDockMagnification: NSWindowController, NSMenuDelegate {
     private weak var dock: NativeDockController?
     private let surface = MagnificationSurface()
     private let hoverLabel = NativeDockTooltip()
     private let tiles: [NativeDockItemView]
-    private let root: NSView
+    private let root: DockGlassRoot
+    private weak var trailing: NSView?
+    private var trailingOrigin: NSPoint?
     private let originalRootFrame: NSRect
     private let originalAutoresizing: NSView.AutoresizingMask
     private var restored = false
@@ -28,12 +32,18 @@ final class NativeDockMagnification: NSWindowController, NSMenuDelegate {
     var menuIsOpen = false
     private var entryUntil: CFTimeInterval = 0
     private var restingBar = NSRect.zero
+    private var shelfLink: CADisplayLink?
+    private var shadowWidth: CGFloat = 0
+    private var trackUntil: CFTimeInterval = 0
+    private var lastPointer = NSPoint.zero
     static let entryDuration = NativeDockWave.entryDuration
     static let exitDuration = NativeDockWave.exitDuration
 
-    init(dock: NativeDockController, tiles: [NativeDockItemView], root: NSView, bar: NSRect) {
+    init(dock: NativeDockController, tiles: [NativeDockItemView], root: DockGlassRoot, trailing: NSView?, bar: NSRect) {
         self.dock = dock; self.tiles = tiles
         self.root = root
+        self.trailing = trailing
+        trailingOrigin = trailing?.frame.origin
         originalRootFrame = root.frame
         originalAutoresizing = root.autoresizingMask
         let screen = dock.window?.screen?.frame ?? bar
@@ -47,7 +57,9 @@ final class NativeDockMagnification: NSWindowController, NSMenuDelegate {
         panel.title = "Dock Magnification"
         panel.isFloatingPanel = true
         panel.allowsToolTipsWhenApplicationIsInactive = true
-        panel.backgroundColor = .clear; panel.isOpaque = false; panel.hasShadow = false
+        panel.backgroundColor = .clear; panel.isOpaque = false
+        // The shelf moves into this window, so its shadow moves with it.
+        panel.hasShadow = true
         panel.level = NSWindow.Level(rawValue: NSWindow.Level.floating.rawValue + 1)
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
         panel.hidesOnDeactivate = false; panel.acceptsMouseMovedEvents = true
@@ -74,7 +86,6 @@ final class NativeDockMagnification: NSWindowController, NSMenuDelegate {
             originalArtworkFrames.append(view.frame)
             baseRects.append(view.convert(view.bounds, to: surface))
             tile.animatesArtwork = true
-
         }
         hoverLabel.isHidden = true
         surface.addSubview(hoverLabel)
@@ -95,12 +106,15 @@ final class NativeDockMagnification: NSWindowController, NSMenuDelegate {
     private func restoreDock() {
         guard !restored else { return }
         restored = true
+        stopShelfTracking()
         for (index, tile) in tiles.enumerated() {
             tile.animationView.layer?.removeAllAnimations()
             tile.animationView.layer?.transform = CATransform3DIdentity
             tile.animationView.frame = originalArtworkFrames[index]
             tile.resetArtwork()
         }
+        root.materialFrameOverride = nil
+        setTrailingShift(0)
         root.removeFromSuperview()
         root.autoresizingMask = originalAutoresizing
         dock?.window?.contentView = root
@@ -114,10 +128,13 @@ final class NativeDockMagnification: NSWindowController, NSMenuDelegate {
     }
     func refreshItems() { refreshRunningIndicators() }
 
+    /// The shelf as currently drawn, in surface coordinates.
+    var shelfFrame: NSRect { root.convert(root.materialFrameOverride ?? root.bounds, to: surface) }
+
     func contains(_ screenPoint: NSPoint) -> Bool {
         guard let window else { return false }
         let local = window.convertPoint(fromScreen: screenPoint)
-        return restingBar.contains(local) || hitRects.contains { $0.contains(local) }
+        return restingBar.contains(local) || shelfFrame.contains(local) || hitRects.contains { $0.contains(local) }
     }
     private func visibleFrame(at index: Int) -> NSRect {
         let view = tiles[index].animationView
@@ -133,15 +150,18 @@ final class NativeDockMagnification: NSWindowController, NSMenuDelegate {
     func update(at screenPoint: NSPoint, animated: Bool = true, magnified: Bool = true) {
         guard let window, !restored, !menuIsOpen, !dragging, pressedIndex == nil else { return }
         acceptsPointer = magnified
+        lastPointer = screenPoint
         let x = screenPoint.x - window.frame.minX
-        let frames = NativeDockWave.layout(base: baseRects,
-            magnifiable: tiles.map { $0.item.kind != .widget && $0.item.kind != .spacer },
-            pointerX: magnified ? x : nil, pointerY: screenPoint.y - window.frame.minY)
+        let magnifiable = tiles.map { $0.item.kind != .widget && $0.item.kind != .spacer }
+        let frames = NativeDockWave.clamp(
+            NativeDockWave.layout(base: baseRects, magnifiable: magnifiable,
+                                  pointerX: magnified ? x : nil, pointerY: screenPoint.y - window.frame.minY),
+            to: surface.bounds, inset: 8)
         let now = CACurrentMediaTime()
         if magnified && entryUntil == 0 { entryUntil = now + Self.entryDuration }
         let duration: TimeInterval
         if !animated || NativeMotion.reducesMotion { duration = 0 }
-        else if !magnified { duration = Self.exitDuration; entryUntil = 0 }
+        else if !magnified { duration = NativeDockWave.exitDuration; entryUntil = 0 }
         else { duration = max(NativeDockWave.trackingDuration, entryUntil - now) }
         CATransaction.begin()
         CATransaction.setDisableActions(true)
@@ -149,8 +169,15 @@ final class NativeDockMagnification: NSWindowController, NSMenuDelegate {
             moveArtwork(at: index, to: frames[index], duration: duration)
         }
         CATransaction.commit()
+        trackShelf(for: duration)
         updatePointerRouting(at: screenPoint)
-        let point = window.convertPoint(fromScreen: screenPoint)
+        updateHoverLabel()
+    }
+    /// Icons keep moving after the last pointer event while their springs
+    /// settle. The label follows the item that ends up under the pointer.
+    private func updateHoverLabel() {
+        guard let window, !restored else { return }
+        let point = window.convertPoint(fromScreen: lastPointer)
         let title = tooltipTitle(at: point)
         if !title.isEmpty, let index = index(at: point) {
             hoverLabel.title = title
@@ -166,6 +193,54 @@ final class NativeDockMagnification: NSWindowController, NSMenuDelegate {
         guard let parent = view.superview, let layer = view.layer else { return }
         let destination = parent.convert(frame, from: surface)
         NativeDockWave.transform(layer, from: originalArtworkFrames[index], to: destination, duration: duration)
+    }
+
+    // MARK: Shelf tracking
+
+    /// Follows the icons' presentation frames while they animate, so the glass
+    /// hugs the row on every display refresh and the shadow follows its shape.
+    private func trackShelf(for duration: TimeInterval) {
+        trackUntil = max(trackUntil, CACurrentMediaTime() + duration)
+        shelfTick()
+        guard duration > 0, shelfLink == nil else { return }
+        let link = surface.displayLink(target: self, selector: #selector(shelfFrame(_:)))
+        link.add(to: .main, forMode: .common)
+        shelfLink = link
+    }
+    @objc private func shelfFrame(_ link: CADisplayLink) { shelfTick() }
+    private func stopShelfTracking() {
+        shelfLink?.invalidate(); shelfLink = nil
+    }
+    private func shelfTick() {
+        guard !restored else { stopShelfTracking(); return }
+        let settled = CACurrentMediaTime() >= trackUntil
+        var left: CGFloat = 0, right: CGFloat = 0
+        for index in tiles.indices {
+            let frame = visibleFrame(at: index)
+            left = min(left, frame.minX - baseRects[index].minX)
+            right = max(right, frame.maxX - baseRects[index].maxX)
+        }
+        // Whole points avoid re-rendering the glass for sub-pixel changes.
+        left = left.rounded(.down); right = right.rounded(.up)
+        let override = left == 0 && right == 0 ? nil
+            : NSRect(x: left, y: 0, width: root.bounds.width + right - left, height: root.bounds.height)
+        root.materialFrameOverride = override
+        setTrailingShift(right)
+        // Recomputing a window shadow is expensive. Follow large changes and
+        // the final shape rather than every frame.
+        let width = override?.width ?? root.bounds.width
+        if settled || abs(width - shadowWidth) >= 6 {
+            shadowWidth = width
+            window?.invalidateShadow()
+        }
+        if !menuIsOpen, pressedIndex == nil, !dragging { updateHoverLabel() }
+        if settled { stopShelfTracking() }
+    }
+    /// Moves the frame, not a layer transform, so its click target follows.
+    private func setTrailingShift(_ shift: CGFloat) {
+        guard let trailing, let origin = trailingOrigin else { return }
+        let target = NSPoint(x: origin.x + shift, y: origin.y)
+        if trailing.frame.origin != target { trailing.setFrameOrigin(target) }
     }
 
     func popoverAnchor(for itemID: UUID) -> (view: NSView, rect: NSRect)? {
@@ -204,10 +279,10 @@ final class NativeDockMagnification: NSWindowController, NSMenuDelegate {
     private func showPress(_ pressed: Bool, at index: Int) {
         if pressed { pressedArtwork = visibleFrame(at: index) }
         let scale: CGFloat = pressed && !NativeMotion.reducesMotion
-            ? (tiles[index].item.kind == .widget ? 0.985 : 0.9) : 1
+            ? (tiles[index].item.kind == .widget ? 0.985 : 0.92) : 1
         let rect = pressedArtwork.insetBy(dx: pressedArtwork.width * (1 - scale) / 2,
                                           dy: pressedArtwork.height * (1 - scale) / 2)
-        let duration: TimeInterval = NativeMotion.reducesMotion ? 0 : (pressed ? 0.07 : 0.16)
+        let duration: TimeInterval = NativeMotion.reducesMotion ? 0 : (pressed ? 0.1 : 0.22)
         moveArtwork(at: index, to: rect, duration: duration)
         NativeMotion.animate(duration) { tiles[index].animationView.animator().alphaValue = pressed ? 0.72 : 1 }
     }

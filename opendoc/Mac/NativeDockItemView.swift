@@ -4,28 +4,30 @@ import IOKit.ps
 import QuartzCore
 
 final class NativeDockItemView: FlippedNativeView {
-    var item: DockItem { didSet { runningCount = NativeApplications.runningCount(item); if item.kind == .folder { icon = NativeApplications.icon(for: item) }; toolTip = item.title; setAccessibilityLabel(item.title); updateFolderGlass(); lastRefreshBucket = nil; refreshIfNeeded(at: Date()); needsDisplay = true } }
+    var item: DockItem { didSet { runningCount = NativeApplications.runningCount(item); if item.kind == .folder || item.kind != oldValue.kind || item.url != oldValue.url { icon = NativeApplications.icon(for: item); updateArtwork() }; toolTip = item.title; setAccessibilityLabel(item.title); updateBackground(); lastRefreshBucket = nil; refreshIfNeeded(at: Date()); canvas.needsDisplay = true } }
     let iconSize: CGFloat
     let vertical: Bool
     weak var controller: NativeDockController?
-    private var hoverAmount: CGFloat = 0
     private var pressAmount: CGFloat = 0
     private var runningCount = 0
     private var lastRefreshBucket: Int?
     private var dataReading = NativeWidgetData.Reading(value: "…", detail: "Loading…")
     private var customReading = NativeCustomWidgetData.Reading()
-    private var dropAfter: Bool? { didSet { needsDisplay = true } }
     private var dragging = false
     private var dragStart = NSPoint.zero
-    private var tracking: NSTrackingArea?
     private var icon: NSImage
-    private var folderGlass: NSView?
-    private let applicationArtwork = NSImageView()
+    private var folderTile: NSView?
+    private let artworkLayer = CALayer()
     private let artworkHost = NSView()
+    /// Widget and folder tiles use the same continuous corner as app icons.
+    private let background = NSView()
+    private let canvas = DockItemCanvas()
     var animatesArtwork = false
     var animationView: NSView { item.kind == .widget || item.kind == .spacer ? self : artworkHost }
     private let folderPreview = NSImageView()
-    private var grouping = false { didSet { needsDisplay = true } }
+    private var grouping = false { didSet { canvas.needsDisplay = true } }
+    private(set) var isLaunching = false
+    var cornerRadius: CGFloat { (iconSize * 0.2237).rounded() }
 
     init(item: DockItem, iconSize: CGFloat, vertical: Bool) {
         self.item = item
@@ -37,14 +39,24 @@ final class NativeDockItemView: FlippedNativeView {
         toolTip = item.title
         wantsLayer = true
         clipsToBounds = false
+        background.wantsLayer = true
+        background.layer?.cornerCurve = .continuous
+        addSubview(background)
         artworkHost.wantsLayer = true
         artworkHost.layerContentsRedrawPolicy = .onSetNeedsDisplay
         artworkHost.clipsToBounds = false
         addSubview(artworkHost)
-        applicationArtwork.imageScaling = .scaleProportionallyUpOrDown
-        applicationArtwork.wantsLayer = true
-        artworkHost.addSubview(applicationArtwork)
-        updateFolderGlass()
+        // The compositor scales this layer during magnification. Rasterizing at
+        // the largest magnified size keeps icons sharp instead of upscaling the
+        // resting bitmap; trilinear filtering keeps the resting size smooth.
+        artworkLayer.contentsGravity = .resizeAspect
+        artworkLayer.minificationFilter = .trilinear
+        artworkLayer.magnificationFilter = .linear
+        artworkHost.layer?.addSublayer(artworkLayer)
+        canvas.owner = self
+        addSubview(canvas)
+        updateArtwork()
+        updateBackground()
         refreshIfNeeded(at: Date())
         setAccessibilityElement(item.kind != .spacer)
         setAccessibilityRole(.button)
@@ -54,66 +66,64 @@ final class NativeDockItemView: FlippedNativeView {
     required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
-    override func draw(_ dirtyRect: NSRect) {
-        defer {
-            if let dropAfter {
-                NSColor.controlAccentColor.setFill()
-                let marker = vertical
-                    ? NSRect(x: 8, y: dropAfter ? bounds.height - 2 : 0, width: bounds.width - 16, height: 2)
-                    : NSRect(x: dropAfter ? bounds.width - 2 : 0, y: 6, width: 2, height: bounds.height - 12)
-                NSBezierPath(roundedRect: marker, xRadius: 1, yRadius: 1).fill()
-            }
-        }
-        super.draw(dirtyRect)
-        if item.kind == .spacer {
-            NSColor.separatorColor.setFill()
-            let line = vertical ? NSRect(x: 12, y: bounds.midY, width: bounds.width - 24, height: 1) : NSRect(x: bounds.midX, y: 10, width: 1, height: bounds.height - 20)
-            line.fill()
-            return
-        }
-        if grouping {
-            NSColor.controlAccentColor.withAlphaComponent(0.25).setFill()
-            NSBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 1), xRadius: 12, yRadius: 12).fill()
-        }
-        if item.kind == .widget {
-            drawWidget()
+    private func resolved(_ color: NSColor) -> CGColor {
+        var result = color.cgColor
+        effectiveAppearance.performAsCurrentDrawingAppearance { result = color.cgColor }
+        return result
+    }
+
+    private func updateBackground() {
+        guard let layer = background.layer else { return }
+        background.isHidden = item.kind != .widget
+        layer.cornerRadius = cornerRadius
+        if item.widget == .note {
+            layer.backgroundColor = NSColor(calibratedRed: 0.98, green: 0.85, blue: 0.34, alpha: 0.9).cgColor
+            layer.borderWidth = 0
         } else {
-            if runningCount > 0 {
-                let spacing = min(6, max(1, bounds.width - 12) / CGFloat(runningCount))
-                let diameter = min(3, spacing / 2)
-                let width = CGFloat(runningCount - 1) * spacing + diameter
-                NSColor.labelColor.withAlphaComponent(0.7).setFill()
-                for index in 0..<runningCount {
-                    NSBezierPath(ovalIn: NSRect(x: bounds.midX - width / 2 + CGFloat(index) * spacing,
-                        y: bounds.maxY - 3, width: diameter, height: diameter)).fill()
-                }
-            }
+            layer.backgroundColor = resolved(.labelColor.withAlphaComponent(0.07))
+            layer.borderColor = resolved(.labelColor.withAlphaComponent(0.09))
+            layer.borderWidth = 1
+        }
+        if let tile = folderTile?.layer {
+            tile.backgroundColor = resolved(.labelColor.withAlphaComponent(0.1))
+            tile.borderColor = resolved(.labelColor.withAlphaComponent(0.14))
         }
     }
 
-    private func updateFolderGlass() {
-        applicationArtwork.image = icon
-        applicationArtwork.isHidden = [.folder, .widget, .spacer].contains(item.kind)
+    private func updateArtwork() {
+        artworkLayer.isHidden = [.folder, .widget, .spacer].contains(item.kind)
+        if !artworkLayer.isHidden { rasterizeIcon() }
         if item.kind == .folder {
-            if folderGlass == nil {
+            if folderTile == nil {
                 folderPreview.imageScaling = .scaleProportionallyUpOrDown
-                // Keep the existing glass tile distinguishable when both native
-                // materials adapt to a dark desktop. The contour is content, so
-                // the glass compositor cannot blend it into the shelf.
-                folderPreview.wantsLayer = true
-                folderPreview.layer?.cornerRadius = 13
-                folderPreview.layer?.borderWidth = 1
-                folderPreview.layer?.borderColor = NSColor.white.withAlphaComponent(0.2).cgColor
-                let glass = DockGlassRoot.makeFolderMaterial(containing: folderPreview)
-                artworkHost.addSubview(glass)
-                folderGlass = glass
+                // A flat tile instead of glass on glass: nested materials blend
+                // into the shelf and Liquid Glass advises against stacking them.
+                let tile = NSView()
+                tile.wantsLayer = true
+                tile.layer?.cornerCurve = .continuous
+                tile.layer?.cornerRadius = cornerRadius
+                tile.layer?.borderWidth = 1
+                tile.addSubview(folderPreview)
+                artworkHost.addSubview(tile)
+                folderTile = tile
             }
             folderPreview.image = icon
         } else {
-            folderGlass?.removeFromSuperview()
-            folderGlass = nil
+            folderTile?.removeFromSuperview()
+            folderTile = nil
         }
         needsLayout = true
+    }
+
+    private func rasterizeIcon() {
+        let scale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
+        artworkLayer.contentsScale = scale
+        artworkLayer.contents = NativeIconRaster.cgImage(icon, side: iconSize * (1 + NativeDockWave.maximumGrowth), scale: scale)
+    }
+
+    override func viewDidChangeBackingProperties() {
+        super.viewDidChangeBackingProperties()
+        if !artworkLayer.isHidden { rasterizeIcon() }
     }
 
     func resetArtwork() {
@@ -123,23 +133,30 @@ final class NativeDockItemView: FlippedNativeView {
         animationView.alphaValue = 1
         needsLayout = true
         layoutSubtreeIfNeeded()
+        if isLaunching { addLaunchBounce() }
     }
 
     func refreshRunningIndicator() {
         let value = NativeApplications.runningCount(item)
         guard value != runningCount else { return }
         runningCount = value
-        needsDisplay = true
+        canvas.needsDisplay = true
     }
 
     override func layout() {
         super.layout()
+        background.frame = bounds.insetBy(dx: 1, dy: 1)
+        canvas.frame = bounds
         guard !animatesArtwork else { return }
         let side = min(iconSize, bounds.width - 2, bounds.height - 5)
         let rect = NSRect(x: (bounds.width - side) / 2, y: (bounds.height - 5 - side) / 2, width: side, height: side)
         artworkHost.frame = rect
-        applicationArtwork.frame = artworkHost.bounds
-        folderGlass?.frame = artworkHost.bounds
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        artworkLayer.frame = artworkHost.bounds
+        CATransaction.commit()
+        folderTile?.frame = artworkHost.bounds
+        folderPreview.frame = artworkHost.bounds
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
@@ -153,14 +170,41 @@ final class NativeDockItemView: FlippedNativeView {
         (string as NSString).draw(in: rect, withAttributes: [.font: font, .foregroundColor: color, .paragraphStyle: paragraph])
     }
 
+    fileprivate func drawContent() {
+        if item.kind == .spacer {
+            NSColor.separatorColor.setFill()
+            let line = vertical ? NSRect(x: 12, y: bounds.midY, width: bounds.width - 24, height: 1) : NSRect(x: bounds.midX, y: 10, width: 1, height: bounds.height - 20)
+            line.fill()
+            return
+        }
+        if grouping {
+            NSColor.controlAccentColor.withAlphaComponent(0.25).setFill()
+            NSBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 1), xRadius: cornerRadius, yRadius: cornerRadius).fill()
+        }
+        if item.kind == .widget {
+            drawWidget()
+        } else if runningCount > 0 {
+            let spacing = min(6, max(1, bounds.width - 12) / CGFloat(runningCount))
+            let diameter = min(3.5, spacing / 2)
+            let width = CGFloat(runningCount - 1) * spacing + diameter
+            NSGraphicsContext.saveGraphicsState()
+            let shadow = NSShadow()
+            shadow.shadowColor = NSColor.black.withAlphaComponent(0.35)
+            shadow.shadowBlurRadius = 1.5
+            shadow.shadowOffset = NSSize(width: 0, height: -0.5)
+            shadow.set()
+            NSColor.labelColor.withAlphaComponent(0.75).setFill()
+            for index in 0..<runningCount {
+                NSBezierPath(ovalIn: NSRect(x: bounds.midX - width / 2 + CGFloat(index) * spacing,
+                    y: bounds.maxY - 3.5, width: diameter, height: diameter)).fill()
+            }
+            NSGraphicsContext.restoreGraphicsState()
+        }
+    }
+
     private func drawWidget() {
         guard let kind = item.widget else { return }
         let item = controller?.profile?.items.first(where: { $0.id == self.item.id }) ?? self.item
-        let area = bounds.insetBy(dx: 1, dy: 1)
-        if kind == .note {
-            NSColor(calibratedRed: 0.98, green: 0.85, blue: 0.34, alpha: 0.88).setFill()
-        } else { NSColor.labelColor.withAlphaComponent(0.045).setFill() }
-        NSBezierPath(roundedRect: area, xRadius: 10, yRadius: 10).fill()
         let y = (bounds.height - 34) / 2
         if kind == .focus {
             let radius: CGFloat = vertical ? 11 : 13
@@ -229,12 +273,6 @@ final class NativeDockItemView: FlippedNativeView {
         return String(format: "%02d:%02d", value / 60, value % 60)
     }
 
-    override func updateTrackingAreas() {
-        super.updateTrackingAreas()
-        if let tracking { removeTrackingArea(tracking) }
-        tracking = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self)
-        addTrackingArea(tracking!)
-    }
     func refreshIfNeeded(at date: Date) {
         guard let kind = item.widget else { return }
         let interval: TimeInterval
@@ -257,43 +295,74 @@ final class NativeDockItemView: FlippedNativeView {
             guard reading != customReading else { return }
             customReading = reading
         }
-        needsDisplay = true
+        canvas.needsDisplay = true
     }
 
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
-        needsDisplay = true
+        updateBackground()
+        canvas.needsDisplay = true
     }
 
-    func setProximity(_ amount: CGFloat) {
-        guard abs(hoverAmount - amount) > 0.025 || amount == 0 && hoverAmount != 0 else { return }
-        hoverAmount = amount
-        animateTransform(duration: 0.14)
-    }
+    // MARK: Press and launch feedback
+
     private func setPressed(_ pressed: Bool) {
         pressAmount = pressed ? 1 : 0
-        animateTransform(duration: pressed ? 0.08 : 0.18)
-    }
-    private func animateTransform(duration: TimeInterval) {
-        guard let layer else { return }
-        let scale: CGFloat = NativeMotion.reducesMotion ? 1 : item.kind == .widget ? 1 - 0.015 * pressAmount : 1 + 0.10 * hoverAmount - 0.05 * pressAmount
+        guard let layer, !NativeMotion.reducesMotion else { return }
+        let scale: CGFloat = item.kind == .widget ? 1 - 0.015 * pressAmount : 1 - 0.06 * pressAmount
         let transform = CATransform3DMakeScale(scale, scale, 1)
         let previous = layer.presentation()?.transform ?? layer.transform
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         layer.transform = transform
-        CATransaction.commit()
-        layer.removeAnimation(forKey: "dockInteraction")
-        guard !NativeMotion.reducesMotion else { return }
-        let animation = CABasicAnimation(keyPath: "transform")
+        let animation = NativeMotion.spring("transform", duration: pressed ? 0.1 : 0.3, bounce: pressed ? 0 : 0.3)
         animation.fromValue = NSValue(caTransform3D: previous)
         animation.toValue = NSValue(caTransform3D: transform)
-        animation.duration = duration
-        animation.timingFunction = CAMediaTimingFunction(controlPoints: 0.22, 0.8, 0.3, 1)
         layer.add(animation, forKey: "dockInteraction")
+        CATransaction.commit()
     }
-    override func mouseEntered(with event: NSEvent) { if controller == nil { setProximity(1) } }
-    override func mouseExited(with event: NSEvent) { if controller == nil { setProximity(0) } }
+
+    /// Bounces the artwork until `endLaunchBounce`, like the system Dock while
+    /// an application is starting. Away from the screen edge on side docks.
+    func beginLaunchBounce() {
+        guard !isLaunching, !NativeMotion.reducesMotion else { return }
+        isLaunching = true
+        addLaunchBounce()
+    }
+
+    func endLaunchBounce() {
+        guard isLaunching else { return }
+        isLaunching = false
+        animationView.layer?.removeAnimation(forKey: "dockLaunchBounce")
+    }
+
+    private func addLaunchBounce() {
+        guard let layer = animationView.layer else { return }
+        let edge = controller?.profile?.appearance.position ?? "Bottom"
+        // The magnified dock has room above the shelf. A resting dock window
+        // is only as large as the shelf, so bounce within its margin there.
+        var distance = iconSize * 0.6
+        if let window, let content = window.contentView {
+            let artwork = animationView.convert(animationView.bounds, to: nil)
+            let room: CGFloat
+            switch edge {
+            case "Left": room = content.bounds.maxX - artwork.maxX
+            case "Right": room = artwork.minX - content.bounds.minX
+            default: room = content.bounds.maxY - artwork.maxY
+            }
+            distance = min(distance, max(4, room - 2))
+        }
+        let bounce = CAKeyframeAnimation(keyPath: edge == "Left" ? "transform.translation.x" : edge == "Right" ? "transform.translation.x" : "transform.translation.y")
+        let peak: CGFloat = edge == "Left" ? distance : -distance
+        bounce.values = [0, peak, 0, 0]
+        bounce.keyTimes = [0, 0.38, 0.76, 1]
+        bounce.timingFunctions = [CAMediaTimingFunction(name: .easeOut), CAMediaTimingFunction(name: .easeIn), CAMediaTimingFunction(name: .linear)]
+        bounce.duration = 0.8
+        bounce.repeatCount = .infinity
+        bounce.isAdditive = true
+        layer.add(bounce, forKey: "dockLaunchBounce")
+    }
+
     override func mouseDown(with event: NSEvent) {
         dragStart = convert(event.locationInWindow, from: nil)
         dragging = false
@@ -310,8 +379,6 @@ final class NativeDockItemView: FlippedNativeView {
 
     func showGrouping(_ value: Bool) { grouping = value }
 
-    func showInsertion(after: Bool?) { dropAfter = after }
-
     override func mouseDragged(with event: NSEvent) {
         guard let controller else { return }
         let point = convert(event.locationInWindow, from: nil)
@@ -324,7 +391,32 @@ final class NativeDockItemView: FlippedNativeView {
         }
         controller.updateDrag(at: event.locationInWindow)
     }
+}
 
+/// Draws running dots and widget text above the artwork and tile background,
+/// so backgrounds can be Core Animation layers with continuous corners.
+private final class DockItemCanvas: FlippedNativeView {
+    weak var owner: NativeDockItemView?
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    override func draw(_ dirtyRect: NSRect) { owner?.drawContent() }
+}
+
+enum NativeIconRaster {
+    /// Renders an icon at `side` points for the given backing scale, choosing
+    /// the best representation for that size rather than the resting one.
+    static func cgImage(_ image: NSImage, side: CGFloat, scale: CGFloat) -> CGImage? {
+        let pixels = max(1, Int((side * scale).rounded(.up)))
+        guard let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: pixels, pixelsHigh: pixels, bitsPerSample: 8,
+                                         samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB,
+                                         bytesPerRow: 0, bitsPerPixel: 0) else { return nil }
+        NSGraphicsContext.saveGraphicsState()
+        defer { NSGraphicsContext.restoreGraphicsState() }
+        guard let context = NSGraphicsContext(bitmapImageRep: rep) else { return nil }
+        NSGraphicsContext.current = context
+        context.imageInterpolation = .high
+        image.draw(in: NSRect(x: 0, y: 0, width: pixels, height: pixels), from: .zero, operation: .sourceOver, fraction: 1)
+        return rep.cgImage
+    }
 }
 
 enum NativeBattery {

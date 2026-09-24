@@ -57,7 +57,7 @@
 
 1. Download the **OpenDoc ZIP** from the [latest release](https://github.com/Ffinnis/opendoc/releases/latest).
 2. Unzip it, move the app to `/Applications` or `~/Applications`, and launch it.
-3. Open the settings menu at the end of the dock to add apps, folders, or widgets.
+3. Point at the dock and click the settings button at its end to add apps, folders, or widgets. You can also Control-click the dock's background.
 
 Requires **macOS 14 or later**. The same release runs on Apple silicon and Intel Macs. To build it yourself, see [Contributing](CONTRIBUTING.md#build-from-source).
 

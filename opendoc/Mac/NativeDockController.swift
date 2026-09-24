@@ -45,6 +45,13 @@ final class NativeDockController: NSWindowController, NSMenuDelegate {
     private var magnificationExit: Timer?
     private var previewUntil = Date.distantPast
     private var popupOpen: Bool { folderController?.isShown == true || editor?.isShown == true }
+    private var dragLayout: [ObjectIdentifier: NSRect] = [:]
+    private var landingPreview: NSView?
+    private var dropFrame: NSRect?
+    private let hoverLabel = NativeDockHoverLabel()
+    private var chromeVisible = false
+    private var launchObservers: [UUID: NSKeyValueObservation] = [:]
+    private var launchTimers: [UUID: Timer] = [:]
 
     init(profileID: UUID, store: DockStore, application: MacApplication) {
         self.profileID = profileID
@@ -113,6 +120,9 @@ final class NativeDockController: NSWindowController, NSMenuDelegate {
     }
     override func close() {
         endMagnification()
+        hoverLabel.hide()
+        launchTimers.values.forEach { $0.invalidate() }
+        launchTimers = [:]; launchObservers = [:]
         pointerTimer?.invalidate(); hideTimer?.invalidate()
         stopPointerMonitors()
         editor?.close(); folderController?.close()
@@ -187,35 +197,38 @@ final class NativeDockController: NSWindowController, NSMenuDelegate {
         }
         for old in oldViews.values where !itemViews.contains(where: { $0 === old }) { old.removeFromSuperview() }
         let thickness = vertical ? max(84, size + 20) : size + 22
-        var offset: CGFloat = 8
-        for view in itemViews {
-            let length: CGFloat
-            switch view.item.kind {
-            case .widget: length = vertical ? 76 : view.item.widget == .note ? 146 : view.item.widget == .calendar ? 122 : 126
-            case .spacer: length = 12
-            default: length = size + 7
-            }
-            let frame = vertical ? NSRect(x: 6, y: offset, width: thickness - 12, height: length) : NSRect(x: offset, y: 6, width: length, height: thickness - 12)
+        let frames = Self.rowFrames(lengths: itemViews.map { Self.length(of: $0.item, iconSize: size, vertical: vertical) }, thickness: thickness, vertical: vertical)
+        for (view, frame) in zip(itemViews, frames) {
             if view.superview == nil {
                 view.frame = frame
                 dockContent.addSubview(view)
                 view.alphaValue = 0
+                view.layer?.transform = CATransform3DMakeScale(0.6, 0.6, 1)
                 NativeMotion.animate(0.18) { view.animator().alphaValue = 1 }
+                let grow = NativeMotion.spring("transform", duration: 0.3, bounce: 0.25)
+                grow.fromValue = NSValue(caTransform3D: CATransform3DMakeScale(0.6, 0.6, 1))
+                grow.toValue = NSValue(caTransform3D: CATransform3DIdentity)
+                view.layer?.transform = CATransform3DIdentity
+                if !NativeMotion.reducesMotion { view.layer?.add(grow, forKey: "dockInsert") }
             } else if view.frame != frame {
                 NativeMotion.animate(0.22) { view.animator().frame = frame }
             }
-            offset += length + 3
         }
+        var offset: CGFloat = frames.last.map { vertical ? $0.maxY + 3 : $0.maxX + 3 } ?? 8
         settingsButton?.removeFromSuperview()
         let settings = NSButton(image: NSImage(systemSymbolName: "slider.horizontal.3", accessibilityDescription: "Dock settings")!, target: self, action: #selector(showMenu(_:)))
         settings.bezelStyle = .regularSquare
         settings.isBordered = false
+        settings.wantsLayer = true
         settings.contentTintColor = .secondaryLabelColor
         settings.toolTip = "Add widgets or edit this dock"
         settings.setAccessibilityLabel("Dock settings")
+        // Chrome stays out of the way like the system Dock: it fades in while
+        // the pointer is over the dock and stays reachable from the shelf menu.
+        settings.alphaValue = chromeVisible ? 1 : 0
         settings.frame = vertical ? NSRect(x: 8, y: offset, width: thickness - 16, height: 25) : NSRect(x: offset + 3, y: 10, width: 25, height: thickness - 20)
         dockContent.addSubview(settings)
-        let ordered: [NSView] = itemViews + [settings]
+        let ordered: [NSView] = itemViews + [settings] + (landingPreview.map { [$0] } ?? [])
         dockContent.subviews = ordered
         settingsButton = settings
         offset += 38
@@ -224,6 +237,32 @@ final class NativeDockController: NSWindowController, NSMenuDelegate {
         root.setDocumentView(dockContent)
         positionPanel(animated: window?.isVisible == true && !hidden)
         root.autoHide = profile.appearance.autoHide
+    }
+
+    static func length(of item: DockItem, iconSize: CGFloat, vertical: Bool) -> CGFloat {
+        switch item.kind {
+        case .widget: return vertical ? 76 : item.widget == .note ? 146 : item.widget == .calendar ? 122 : 126
+        case .spacer: return 12
+        default: return iconSize + 7
+        }
+    }
+
+    /// Tile frames for a row, in the flipped content coordinates. `gap` opens
+    /// room for a dragged item before the tile at that index.
+    static func rowFrames(lengths: [CGFloat], thickness: CGFloat, vertical: Bool, gap: (index: Int, length: CGFloat)? = nil) -> [NSRect] {
+        var offset: CGFloat = 8
+        return lengths.enumerated().map { index, length in
+            if let gap, gap.index == index { offset += gap.length + 3 }
+            defer { offset += length + 3 }
+            return vertical ? NSRect(x: 6, y: offset, width: thickness - 12, height: length) : NSRect(x: offset, y: 6, width: length, height: thickness - 12)
+        }
+    }
+
+    private func setChromeVisible(_ visible: Bool) {
+        guard visible != chromeVisible else { return }
+        chromeVisible = visible
+        guard let settingsButton else { return }
+        NativeMotion.animate(visible ? 0.15 : 0.3) { settingsButton.animator().alphaValue = visible ? 1 : 0 }
     }
 
     func positionPanel(animated: Bool = false) {
@@ -291,7 +330,8 @@ final class NativeDockController: NSWindowController, NSMenuDelegate {
             if inside || popupOpen || interacting { reveal() }
             else { scheduleHide() }
         }
-        if draggedView != nil || magnification?.menuIsOpen == true || popupOpen { return }
+        setChromeVisible(!hidden && (inside || popupOpen || interacting || draggedView != nil))
+        if draggedView != nil || magnification?.menuIsOpen == true || popupOpen { hoverLabel.hide(); return }
         // Start the wave outside the visible row at zero influence. Waiting until
         // the pointer crosses the row's edge requests near-maximum size at once.
         // This approach area never reveals a hidden dock or intercepts clicks.
@@ -311,18 +351,35 @@ final class NativeDockController: NSWindowController, NSMenuDelegate {
                 magnification?.update(at: point, magnified: false)
                 magnificationExit = Timer.scheduledTimer(withTimeInterval: NativeDockMagnification.exitDuration, repeats: false) { [weak self] _ in
                     MainActor.assumeIsolated {
+                        guard let self else { return }
+                        // A launching icon bounces above the shelf, which only
+                        // the overlay has room for. Check again once it lands.
+                        if self.itemViews.contains(where: \.isLaunching) {
+                            self.magnificationExit = nil
+                            self.lastPointer = nil
+                            return
+                        }
                         // An auto-hiding dock keeps the same glass until it has
                         // left the screen, rather than swapping material first.
-                        if self?.profile?.appearance.autoHide != true { self?.endMagnification() }
+                        if self.profile?.appearance.autoHide != true { self.endMagnification() }
                     }
                 }
             }
-            let local = dockContent.convert(window?.convertPoint(fromScreen: point) ?? .zero, from: nil)
-            for tile in itemViews {
-                let distance = tile.vertical ? abs(local.y - tile.frame.midY) : abs(local.x - tile.frame.midX)
-                tile.setProximity(hoverActive ? max(0, 1 - distance / 85) : 0)
-            }
+            updateHoverLabel(at: point, active: hoverActive && magnification == nil)
         }
+    }
+
+    /// The label for docks that are not magnified: side docks, Reduce Motion,
+    /// and overflowing rows. Magnified docks label inside their overlay.
+    private func updateHoverLabel(at point: NSPoint, active: Bool) {
+        guard active, let window, let tile = itemViews.first(where: { tile in
+            let local = tile.convert(window.convertPoint(fromScreen: point), from: nil)
+            return tile.item.kind != .spacer && tile.bounds.contains(local)
+        }) else { hoverLabel.hide(); return }
+        let title = tile.toolTip ?? tile.item.title
+        if hoverLabel.itemID == tile.item.id, hoverLabel.isShown { return }
+        let anchor = window.convertToScreen(tile.convert(tile.bounds, to: nil))
+        hoverLabel.show(title, itemID: tile.item.id, anchor: anchor, edge: profile?.appearance.position ?? "Bottom", in: window)
     }
 
     private func installMagnification() {
@@ -338,7 +395,8 @@ final class NativeDockController: NSWindowController, NSMenuDelegate {
             return
         }
         root.layoutSubtreeIfNeeded()
-        let overlay = NativeDockMagnification(dock: self, tiles: itemViews, root: root, bar: panel.frame)
+        hoverLabel.hide()
+        let overlay = NativeDockMagnification(dock: self, tiles: itemViews, root: root, trailing: settingsButton, bar: panel.frame)
         // A failed overlay must never leave an empty glass bar behind.
         guard overlay.hasVisibleContent else { overlay.close(); return }
         magnification = overlay
@@ -349,7 +407,7 @@ final class NativeDockController: NSWindowController, NSMenuDelegate {
         magnificationExit?.invalidate(); magnificationExit = nil
         magnification?.close(); magnification = nil
         root.alphaValue = 1
-        itemViews.forEach { $0.alphaValue = 1; $0.setProximity(0) }
+        itemViews.forEach { if draggedView !== $0 { $0.alphaValue = 1 } }
         if pendingWorkspaceReload {
             pendingWorkspaceReload = false
             reload()
@@ -375,6 +433,8 @@ final class NativeDockController: NSWindowController, NSMenuDelegate {
                       let screen = self.window?.screen ?? NSScreen.main else { return }
                 self.hidden = true
                 self.revealDwell.reset()
+                self.hoverLabel.hide()
+                self.setChromeVisible(false)
                 self.magnification?.update(at: NSEvent.mouseLocation, magnified: false)
                 NativeMotion.animate(0.24) {
                     self.window?.animator().setFrame(self.hiddenFrame(on: screen), display: true)
@@ -497,17 +557,23 @@ final class NativeDockController: NSWindowController, NSMenuDelegate {
             folderController?.show(relativeTo: target?.view ?? anchor, rect: target?.rect)
         case .application:
             guard let address = item.url, let url = URL(string: address) else { return }
+            // The system Dock bounces an icon until its app finishes launching.
+            // An app that is already running just comes forward.
+            let tile = itemViews.first { $0.item.id == item.id }
+            if !NativeApplications.isRunning(item) { tile?.beginLaunchBounce() }
             // Launch Services sends the normal reopen request to a running app.
             // Activating its process alone leaves Finder with no window to show.
-            NSWorkspace.shared.openApplication(at: url, configuration: .init()) { app, error in
+            NSWorkspace.shared.openApplication(at: url, configuration: .init()) { [weak self] app, error in
                 Task { @MainActor in
                     if let error {
+                        tile?.endLaunchBounce()
                         (NSApplication.shared.delegate as? MacApplication)?.report(error.localizedDescription)
                         return
                     }
                     // A dock click should also bring forward this app's windows
                     // on other displays, not just its last key window.
                     app?.activate(options: .activateAllWindows)
+                    if let app, let tile { self?.trackLaunch(of: app, for: tile) } else { tile?.endLaunchBounce() }
                 }
             }
         case .link:
@@ -538,6 +604,27 @@ final class NativeDockController: NSWindowController, NSMenuDelegate {
         }
     }
 
+    private func trackLaunch(of app: NSRunningApplication, for tile: NativeDockItemView) {
+        let id = tile.item.id
+        guard tile.isLaunching else { return }
+        let finish: () -> Void = { [weak self, weak tile] in
+            tile?.endLaunchBounce()
+            self?.launchObservers[id] = nil
+            self?.launchTimers[id]?.invalidate()
+            self?.launchTimers[id] = nil
+        }
+        if app.isFinishedLaunching || app.isTerminated { finish(); return }
+        launchObservers[id] = app.observe(\.isFinishedLaunching, options: [.new]) { app, _ in
+            guard app.isFinishedLaunching else { return }
+            Task { @MainActor in finish() }
+        }
+        // A launch that never reports completion must not bounce forever.
+        launchTimers[id]?.invalidate()
+        launchTimers[id] = Timer.scheduledTimer(withTimeInterval: 20, repeats: false) { _ in
+            MainActor.assumeIsolated { finish() }
+        }
+    }
+
     func openNewWindow(_ item: DockItem) {
         folderController?.close()
         NativeApplicationWindows.openNewWindow(item) { [weak self] error in
@@ -551,11 +638,15 @@ final class NativeDockController: NSWindowController, NSMenuDelegate {
         draggedView = view
         previewUntil = .distantPast
         magnificationExit?.invalidate(); magnificationExit = nil
+        hoverLabel.hide()
         // The overlay retains mouse capture until release, but the resting row
         // supplies stable drop targets and the drag preview.
         magnification?.showDragSurface()
         root.alphaValue = 1
-        itemViews.forEach { $0.alphaValue = 1; $0.setProximity(0) }
+        itemViews.forEach { $0.alphaValue = 1 }
+        dragLayout = [:]
+        dropFrame = nil
+        landingPreview?.removeFromSuperview(); landingPreview = nil
         let image = NSImage(size: view.bounds.size)
         if let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) {
             view.cacheDisplay(in: view.bounds, to: bitmap)
@@ -563,53 +654,96 @@ final class NativeDockController: NSWindowController, NSMenuDelegate {
         }
         let preview = NSImageView(image: image)
         preview.frame = view.frame
-        preview.alphaValue = 0.9
+        preview.wantsLayer = true
         dockContent.addSubview(preview, positioned: .above, relativeTo: nil)
         dragImage = preview
-        view.alphaValue = 0.3
+        // The lifted icon travels with the pointer while its slot closes and a
+        // gap opens under it, like the system Dock. The tile itself stays put.
+        view.alphaValue = 0
+    }
+
+    private func applyDragLayout(_ views: [NativeDockItemView], frames: [NSRect]) {
+        var changed = false
+        for (view, frame) in zip(views, frames) where dragLayout[ObjectIdentifier(view)] != frame {
+            dragLayout[ObjectIdentifier(view)] = frame
+            changed = true
+        }
+        guard changed else { return }
+        NativeMotion.animate(0.2) {
+            for (view, frame) in zip(views, frames) where view.frame != frame { view.animator().frame = frame }
+        }
     }
 
     func updateDrag(at windowPoint: NSPoint) {
-        guard let draggedView else { return }
+        guard let draggedView, let profile else { return }
         let point = dockContent.convert(windowPoint, from: nil)
         dragImage?.setFrameOrigin(NSPoint(x: point.x - draggedView.bounds.midX, y: point.y - draggedView.bounds.midY))
-        itemViews.forEach { $0.showInsertion(after: nil); $0.showGrouping(false) }
+        itemViews.forEach { $0.showGrouping(false) }
         dropTarget = nil
         groupTarget = nil
-        guard root.bounds.contains(root.convert(windowPoint, from: nil)),
-              let target = itemViews.filter({ candidate in
-                  candidate !== draggedView && profile?.items.contains(where: { $0.id == candidate.item.id }) == true
-              }).min(by: { first, second in
-                  draggedView.vertical ? abs(first.frame.midY - point.y) < abs(second.frame.midY - point.y)
-                      : abs(first.frame.midX - point.x) < abs(second.frame.midX - point.x)
-              }) else {
-            groupCandidate = nil; groupTimer?.invalidate(); return
+        dropFrame = nil
+        let vertical = draggedView.vertical
+        let size = CGFloat(profile.appearance.size)
+        let thickness = vertical ? max(84, size + 20) : size + 22
+        let others = itemViews.filter { $0 !== draggedView }
+        let lengths = others.map { Self.length(of: $0.item, iconSize: size, vertical: vertical) }
+        let closed = Self.rowFrames(lengths: lengths, thickness: thickness, vertical: vertical)
+        let draggedLength = Self.length(of: draggedView.item, iconSize: size, vertical: vertical)
+        func axis(_ rect: NSRect) -> CGFloat { vertical ? rect.midY : rect.midX }
+        let coordinate = vertical ? point.y : point.x
+        guard root.bounds.contains(root.convert(windowPoint, from: nil)), !others.isEmpty || profile.items.isEmpty else {
+            groupCandidate = nil; groupTimer?.invalidate()
+            applyDragLayout(others, frames: closed)
+            return
         }
+        let pinned = others.indices.filter { index in profile.items.contains { $0.id == others[index].item.id } }
         if draggedView.item.kind == .application,
-           [.application, .folder].contains(target.item.kind),
-           target.frame.insetBy(dx: target.frame.width * 0.25, dy: target.frame.height * 0.2).contains(point) {
-            if groupCandidate?.0 != target.item.id {
-                groupCandidate = (target.item.id, Date())
-                groupTimer?.invalidate()
-                groupTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) { [weak self] _ in
-                    MainActor.assumeIsolated {
-                        guard let self, let window = self.window else { return }
-                        self.updateDrag(at: window.convertPoint(fromScreen: NSEvent.mouseLocation))
+           let nearest = pinned.min(by: { abs(axis(closed[$0]) - coordinate) < abs(axis(closed[$1]) - coordinate) }),
+           [.application, .folder].contains(others[nearest].item.kind) {
+            let target = others[nearest]
+            let visible = dragLayout[ObjectIdentifier(target)] ?? target.frame
+            if visible.insetBy(dx: visible.width * 0.25, dy: visible.height * 0.2).contains(point) {
+                if groupCandidate?.0 != target.item.id {
+                    groupCandidate = (target.item.id, Date())
+                    groupTimer?.invalidate()
+                    groupTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) { [weak self] _ in
+                        MainActor.assumeIsolated {
+                            guard let self, let window = self.window else { return }
+                            self.updateDrag(at: window.convertPoint(fromScreen: NSEvent.mouseLocation))
+                        }
                     }
                 }
-            }
-            if target.item.kind == .folder || Date().timeIntervalSince(groupCandidate!.1) >= 0.45 {
-                groupTarget = target.item.id
-                target.showGrouping(true)
-                return
+                if target.item.kind == .folder || Date().timeIntervalSince(groupCandidate!.1) >= 0.45 {
+                    groupTarget = target.item.id
+                    target.showGrouping(true)
+                    applyDragLayout(others, frames: closed)
+                    return
+                }
+            } else {
+                groupCandidate = nil
+                groupTimer?.invalidate()
             }
         } else {
             groupCandidate = nil
             groupTimer?.invalidate()
         }
-        let after = target.vertical ? point.y > target.frame.midY : point.x > target.frame.midX
-        target.showInsertion(after: after)
-        dropTarget = (target.item.id, after)
+        let insertion = closed.firstIndex { axis($0) > coordinate } ?? others.count
+        let gapOffset = insertion < closed.count ? (vertical ? closed[insertion].minY : closed[insertion].minX)
+            : (closed.last.map { (vertical ? $0.maxY : $0.maxX) + 3 } ?? 8)
+        dropFrame = vertical ? NSRect(x: 6, y: gapOffset, width: thickness - 12, height: draggedLength)
+            : NSRect(x: gapOffset, y: 6, width: draggedLength, height: thickness - 12)
+        applyDragLayout(others, frames: Self.rowFrames(lengths: lengths, thickness: thickness, vertical: vertical, gap: (insertion, draggedLength)))
+        // The store orders relative to pinned items only. Running apps that are
+        // not kept in the dock sit between them, so choose the nearer neighbor.
+        let next = pinned.first { $0 >= insertion }
+        let previous = pinned.last { $0 < insertion }
+        switch (previous, next) {
+        case let (previous?, next?):
+            dropTarget = insertion - 1 - previous <= next - insertion ? (others[previous].item.id, true) : (others[next].item.id, false)
+        case let (previous?, nil): dropTarget = (others[previous].item.id, true)
+        case let (nil, next?): dropTarget = (others[next].item.id, false)
+        default: dropTarget = nil
+        }
     }
 
     func finishDrag(at windowPoint: NSPoint) {
@@ -617,25 +751,52 @@ final class NativeDockController: NSWindowController, NSMenuDelegate {
         let source = draggedView?.item
         let destination = dropTarget
         let grouping = groupTarget
+        let dragged = draggedView
+        let landing = dropFrame
+        let groupingFrame = grouping.flatMap { id in itemViews.first { $0.item.id == id } }.map { dragLayout[ObjectIdentifier($0)] ?? $0.frame }
         groupTimer?.invalidate()
         groupCandidate = nil
         groupTarget = nil
-        dragImage?.removeFromSuperview()
+        let preview = dragImage
         dragImage = nil
-        draggedView?.alphaValue = 1
         draggedView = nil
         dropTarget = nil
-        itemViews.forEach { $0.showInsertion(after: nil); $0.showGrouping(false) }
+        dropFrame = nil
+        dragLayout = [:]
+        itemViews.forEach { $0.showGrouping(false) }
         interacting = false
         endMagnification()
         lastPointer = nil
+        var changed = false
         do {
             if let source, let grouping {
                 try store.drop(source, relativeTo: grouping, placement: .group, in: profileID)
+                changed = true
             } else if let source, let destination {
                 try store.drop(source, relativeTo: destination.0, placement: destination.1 ? .after : .before, in: profileID)
+                changed = true
             }
         } catch { application?.report(error.localizedDescription) }
+        // The lifted icon settles into its slot, or shrinks into the folder it
+        // joined. An abandoned drag returns the row to its resting layout.
+        if let preview, !NativeMotion.reducesMotion, dragged?.superview != nil {
+            landingPreview = preview
+            let target = grouping != nil ? groupingFrame : (changed ? landing : dragged?.frame)
+            NativeMotion.animate(0.22) {
+                if let target {
+                    preview.animator().frame = grouping != nil ? target.insetBy(dx: target.width * 0.3, dy: target.height * 0.3) : target
+                }
+                if grouping != nil || target == nil { preview.animator().alphaValue = 0 }
+            } completion: { [weak self] in
+                preview.removeFromSuperview()
+                if self?.landingPreview === preview { self?.landingPreview = nil }
+                dragged?.alphaValue = 1
+            }
+        } else {
+            preview?.removeFromSuperview()
+            dragged?.alphaValue = 1
+        }
+        if !changed { reload() }
         scheduleHide()
     }
 
@@ -660,6 +821,11 @@ final class NativeDockController: NSWindowController, NSMenuDelegate {
     }
     func remove(_ id: UUID) {
         guard var profile else { return }
+        if !NativeMotion.reducesMotion, let tile = itemViews.first(where: { $0.item.id == id }), let window = tile.window {
+            let rect = window.convertToScreen(tile.convert(tile.bounds, to: nil))
+            let side = min(rect.width, rect.height)
+            NSAnimationEffect.poof.show(centeredAt: NSPoint(x: rect.midX, y: rect.midY), size: NSSize(width: side, height: side))
+        }
         profile.items.removeAll { $0.id == id }
         do { try store.update(profile) } catch { application?.report(error.localizedDescription) }
     }
@@ -693,6 +859,15 @@ final class DockGlassRoot: NSView {
             if autoHide { controller?.scheduleHide() } else { controller?.reveal() }
         }
     }
+    /// While magnified, the shelf widens around the row. The row itself keeps
+    /// its resting origin so item coordinates stay valid.
+    var materialFrameOverride: NSRect? {
+        didSet {
+            guard materialFrameOverride != oldValue else { return }
+            // Only the material moves; the row keeps its layout.
+            material.frame = materialFrameOverride ?? bounds
+        }
+    }
 
     static func makeFolderMaterial(containing content: NSView) -> NSView {
         makeMaterial(containing: content, cornerRadius: 13)
@@ -703,9 +878,20 @@ final class DockGlassRoot: NSView {
             glass.style = appearance.glassStyle == "Clear" ? .clear : .regular
             glass.tintColor = appearance.glassTint == 0 ? nil : NSColor.black.withAlphaComponent(appearance.glassTint * 0.6)
         } else if let effect = material as? NSVisualEffectView {
-            effect.material = appearance.glassStyle == "Clear" ? .underWindowBackground : .hudWindow
+            // Materials that follow the desktop appearance, like the system
+            // Dock before Liquid Glass. HUD material stays dark on a light desktop.
+            effect.material = appearance.glassStyle == "Clear" ? .underWindowBackground : .popover
             effect.layer?.backgroundColor = NSColor.black.withAlphaComponent(appearance.glassTint * 0.6).cgColor
+            Self.updateEdge(of: effect)
         }
+    }
+
+    /// A hairline highlight separates the fallback shelf from the desktop.
+    static func updateEdge(of effect: NSVisualEffectView) {
+        var color = NSColor.labelColor.withAlphaComponent(0.14).cgColor
+        effect.effectiveAppearance.performAsCurrentDrawingAppearance { color = NSColor.labelColor.withAlphaComponent(0.14).cgColor }
+        effect.layer?.borderColor = color
+        effect.layer?.borderWidth = 1
     }
 
     func configure(_ appearance: DockAppearance) { Self.configure(material, appearance: appearance) }
@@ -724,7 +910,9 @@ final class DockGlassRoot: NSView {
             effect.state = .active
             effect.wantsLayer = true
             effect.layer?.cornerRadius = cornerRadius
+            effect.layer?.cornerCurve = .continuous
             effect.layer?.masksToBounds = true
+            updateEdge(of: effect)
             effect.addSubview(content)
             content.autoresizingMask = [.width, .height]
             return effect
@@ -753,9 +941,14 @@ final class DockGlassRoot: NSView {
         needsLayout = true
     }
 
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        if let effect = material as? NSVisualEffectView { Self.updateEdge(of: effect) }
+    }
+
     override func layout() {
         super.layout()
-        material.frame = bounds
+        material.frame = materialFrameOverride ?? bounds
         scroll.frame = bounds
         guard let document else { return }
         let overflows = document.frame.width > bounds.width + 0.5 || document.frame.height > bounds.height + 0.5

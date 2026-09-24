@@ -4,9 +4,9 @@ Open Doc runs from the menu bar. Use the settings button at the end of a dock to
 
 ## Arrange your dock
 
-Drag an item to move it. The insertion marker shows where it will land. Drag a running app into the pinned section to keep it there, or right-click it and choose **Keep in Dock**. You can also reorder items in Settings.
+Drag an item to move it. The other items move apart to show where it will land. Drag a running app into the pinned section to keep it there, or right-click it and choose **Keep in Dock**. You can also reorder items in Settings.
 
-Add applications, files, folders, links, spacers, or widgets from the dock's settings menu. Choose **New Dock...** to create another dock with its own items and appearance. In Settings, select the dock you want to edit first.
+Add applications, files, folders, links, spacers, or widgets from the dock's settings menu. Its button appears at the end of the dock while the pointer is over the dock. You can also Control-click the dock's background. Choose **New Dock...** to create another dock with its own items and appearance. In Settings, select the dock you want to edit first.
 
 ## Group apps into folders
 
